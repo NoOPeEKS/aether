@@ -1,4 +1,4 @@
-mod api;
+pub mod api;
 
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpListener;
