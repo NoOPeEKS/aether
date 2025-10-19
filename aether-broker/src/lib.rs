@@ -1,14 +1,23 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+mod api;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use std::{collections::HashMap, sync::Arc};
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub use api::build_router;
+pub use api::AppState;
+
+pub async fn run_app() -> anyhow::Result<()> {
+    let state = AppState {
+        queue: Arc::new(RwLock::new(HashMap::new())),
+        results: Arc::new(RwLock::new(HashMap::new())),
+    };
+    let app = api::build_router(state);
+    let listener = TcpListener::bind("0.0.0.0:8080")
+        .await
+        .expect("Could not bind Broker API to 0.0.0.0:8080");
+
+    axum::serve(listener, app).await.expect("Could not serve Broker API");
+
+    Ok(())
 }
