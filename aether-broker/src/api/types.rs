@@ -15,6 +15,7 @@ pub struct TaskResult {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Queued,
     Running,
