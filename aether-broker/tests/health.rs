@@ -1,17 +1,11 @@
-use aether_broker::{AppState, build_router};
+use aether_broker::{BrokerState, build_router};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower::Service;
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let state = AppState {
-        queue: Arc::new(RwLock::new(HashMap::new())),
-        results: Arc::new(RwLock::new(HashMap::new())),
-    };
+    let state = BrokerState::new(10);
     let mut app = build_router(state);
 
     let response = app

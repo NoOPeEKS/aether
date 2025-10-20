@@ -1,19 +1,13 @@
 use aether_broker::api::tasks::CreateTaskResponse;
-use aether_broker::{AppState, build_router};
+use aether_broker::{BrokerState, build_router};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower::Service;
 
 #[tokio::test]
 async fn test_create_task() {
-    let state = AppState {
-        queue: Arc::new(RwLock::new(HashMap::new())),
-        results: Arc::new(RwLock::new(HashMap::new())),
-    };
+    let state = BrokerState::new(10);
     let mut app = build_router(state);
 
     let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
@@ -41,10 +35,7 @@ async fn test_create_task() {
 
 #[tokio::test]
 async fn test_get_non_existant_task() {
-    let state = AppState {
-        queue: Arc::new(RwLock::new(HashMap::new())),
-        results: Arc::new(RwLock::new(HashMap::new())),
-    };
+    let state = BrokerState::new(10);
     let mut app = build_router(state);
 
     let response = app
@@ -69,10 +60,7 @@ async fn test_get_non_existant_task() {
 
 #[tokio::test]
 async fn get_info_from_task() {
-    let state = AppState {
-        queue: Arc::new(RwLock::new(HashMap::new())),
-        results: Arc::new(RwLock::new(HashMap::new())),
-    };
+    let state = BrokerState::new(10);
     let mut app = build_router(state);
 
     let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
