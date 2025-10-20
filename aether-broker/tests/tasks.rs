@@ -1,4 +1,5 @@
-use aether_broker::api::tasks::CreateTaskResponse;
+use aether_broker::state::{TaskResult, TaskStatus};
+use aether_broker::api::tasks::{CreateTaskResponse, GetAllTasksResponse};
 use aether_broker::{BrokerState, build_router};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -59,7 +60,7 @@ async fn test_get_non_existant_task() {
 }
 
 #[tokio::test]
-async fn get_info_from_task() {
+async fn test_get_info_from_task() {
     let state = BrokerState::new(10);
     let mut app = build_router(state);
 
@@ -103,4 +104,46 @@ async fn get_info_from_task() {
 
     assert!(get_body_string.contains(r#""name":"task1""#));
     assert!(get_body_string.contains(r#""status":"queued""#));
+}
+
+#[tokio::test]
+async fn test_get_all_tasks() {
+    let state = BrokerState::new(10);
+    let mut app = build_router(state);
+
+    let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
+    let body = Body::from(serde_json::to_vec(&payload).unwrap());
+    let response = app
+        .call(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/tasks")
+                .header("Content-Type", "application/json")
+                .body(body)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let response = app
+        .call(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/tasks")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let get_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
+    let resp: GetAllTasksResponse = serde_json::from_str(&get_body_string).unwrap();
+    assert!(resp.tasks.is_some());
+    assert!(!resp.tasks.clone().unwrap().is_empty());
+    assert_eq!(resp.tasks.unwrap()[0].status, TaskStatus::Queued);
 }

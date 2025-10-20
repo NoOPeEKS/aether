@@ -39,7 +39,7 @@ pub async fn create_task_handler(
     )
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GetTaskResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     task: Option<TaskResult>,
@@ -92,5 +92,23 @@ pub async fn get_task_handler(
                 error: Some("No task was found with the provided id".to_string()),
             }),
         )
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetAllTasksResponse {
+    pub tasks: Option<Vec<TaskResult>>,
+}
+
+pub async fn get_all_tasks_handler(
+    State(state): State<BrokerState>,
+) -> (StatusCode, Json<GetAllTasksResponse>) {
+    if let Some(tasks) = state.get_all_tasks().await {
+        (
+            StatusCode::OK,
+            Json(GetAllTasksResponse { tasks: Some(tasks) }),
+        )
+    } else {
+        (StatusCode::OK, Json(GetAllTasksResponse { tasks: None }))
     }
 }

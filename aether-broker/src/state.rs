@@ -20,7 +20,7 @@ pub struct TaskResult {
     pub status: TaskStatus,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Queued,
@@ -75,5 +75,10 @@ impl BrokerState {
 
     pub async fn get_task(&self, id: Uuid) -> Option<TaskResult> {
         self.tasks.read().await.get(&id).cloned()
+    }
+
+    pub async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
+        let tasks: Vec<TaskResult> = self.tasks.read().await.values().cloned().collect();
+        if tasks.is_empty() { None } else { Some(tasks) }
     }
 }

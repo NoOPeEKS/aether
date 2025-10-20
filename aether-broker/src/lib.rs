@@ -1,5 +1,5 @@
 pub mod api;
-mod state;
+pub mod state;
 
 use tokio::net::TcpListener;
 
