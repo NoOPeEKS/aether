@@ -1,5 +1,6 @@
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 use aether_broker::jrpc::protocol::JsonRpcRequest;
 use aether_broker::jrpc::server::create_jrpc_server;
@@ -63,5 +64,15 @@ async fn test_register_worker() {
         .unwrap();
 
     stream.flush().await.unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    tokio::time::sleep(Duration::from_secs(4)).await;
+
+    let mut reader = BufReader::new(stream);
+    let mut buf = String::new();
+    _ = reader.read_line(&mut buf).await;
+    _ = reader.read_line(&mut buf).await;
+    let mut buf: [u8; 82] = [0; 82];
+    _ = reader.read_exact(&mut buf).await;
+
+    println!("{}", String::from_utf8_lossy(&buf));
 }

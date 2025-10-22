@@ -1,13 +1,18 @@
-use crate::jrpc::protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
-use crate::state::BrokerState;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::info;
+
+use crate::jrpc::protocol::{
+    JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+};
+use crate::state::BrokerState;
 
 pub async fn create_jrpc_server(state: BrokerState, port: usize) {
     let state = Arc::new(state);
@@ -35,7 +40,8 @@ async fn handle_jrpc_connection(
     state: Arc<BrokerState>,
     workers: Arc<RwLock<HashSet<String>>>,
 ) {
-    let mut reader = BufReader::new(stream);
+    let (reader, mut writer) = TcpStream::into_split(stream);
+    let mut reader = BufReader::new(reader);
     loop {
         let mut line = String::new();
 
@@ -74,7 +80,18 @@ async fn handle_jrpc_connection(
 
             let workers = Arc::clone(&workers);
             match process_jsonrpc_message(&message_body, &state, workers).await {
-                Ok(_) => {}
+                Ok(Some(response)) => {
+                    let res = serde_json::to_string(&response);
+                    match res {
+                        Ok(res_str) => {
+                            let response_bytes =
+                                format!("Content-Length: {}\r\n\r\n{}", res_str.len(), res_str);
+                            writer.write_all(response_bytes.as_bytes()).await.unwrap();
+                        }
+                        Err(_) => continue,
+                    }
+                }
+                Ok(None) => continue,
                 Err(_) => continue,
             }
         } else {
@@ -93,26 +110,44 @@ async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
     workers: Arc<RwLock<HashSet<String>>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<JsonRpcResponse>> {
     let message = String::from_utf8_lossy(message);
     let message: serde_json::Value = serde_json::from_str(&message)?;
     if message.get("id").is_some() {
-        // It's a request
         let request: JsonRpcRequest = serde_json::from_value(message)?;
         info!("[INFO] Received a request of type {}", &request.method);
+
         if &request.method == "register_worker" {
             let register_req: RegisterWorkerRequest = serde_json::from_value(request.params)?;
             if !workers.read().await.contains(&register_req.worker_id) {
+                info!(
+                    "[INFO] Registered new worker with ID = {}",
+                    &register_req.worker_id
+                );
                 workers.write().await.insert(register_req.worker_id);
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: Some(json!({"status": "registered"})),
+                    error: None,
+                }));
             } else {
-                // TODO: Build custom Error types to know why the processing fails.
-                anyhow::bail!("This worker ID is already registered!");
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: JsonRpcErrorCode::InvalidParams,
+                        message: "Worker ID has already been registered".into(),
+                        data: None,
+                    }),
+                }));
             }
         }
     } else {
         // It's a notification
         let notification: JsonRpcNotification = serde_json::from_value(message)?;
-        if &notification.method == "heartbeat" {} // Implement heartbeat
+        if &notification.method == "heartbeat" {} // TODO: Implement heartbeat
     }
-    Ok(())
+    Ok(None)
 }
