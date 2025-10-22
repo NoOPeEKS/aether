@@ -12,7 +12,7 @@ use tracing::info;
 use crate::jrpc::protocol::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
 };
-use crate::state::BrokerState;
+use crate::state::{BrokerState, Task};
 
 pub async fn create_jrpc_server(state: BrokerState, port: usize) {
     let state = Arc::new(state);
@@ -102,8 +102,13 @@ async fn handle_jrpc_connection(
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct RegisterWorkerRequest {
+struct RegisterWorkerRequestParams {
     worker_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct FetchTaskResponseResult {
+    task: Option<Task>,
 }
 
 async fn process_jsonrpc_message(
@@ -118,7 +123,7 @@ async fn process_jsonrpc_message(
         info!("[INFO] Received a request of type {}", &request.method);
 
         if &request.method == "register_worker" {
-            let register_req: RegisterWorkerRequest = serde_json::from_value(request.params)?;
+            let register_req: RegisterWorkerRequestParams = serde_json::from_value(request.params)?;
             if !workers.read().await.contains(&register_req.worker_id) {
                 info!(
                     "[INFO] Registered new worker with ID = {}",
@@ -141,6 +146,28 @@ async fn process_jsonrpc_message(
                         message: "Worker ID has already been registered".into(),
                         data: None,
                     }),
+                }));
+            }
+        }
+
+        if &request.method == "fetch_task" {
+            if let Some(task) = state.dequeue_task().await {
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: Some(serde_json::to_value(FetchTaskResponseResult {
+                        task: Some(task),
+                    })?),
+                    error: None,
+                }));
+            } else {
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: Some(serde_json::to_value(FetchTaskResponseResult {
+                        task: None,
+                    })?),
+                    error: None,
                 }));
             }
         }
