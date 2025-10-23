@@ -12,11 +12,30 @@ use crate::jrpc::protocol::{
 };
 use crate::state::{BrokerState, Task, TaskResult, WorkerInfo};
 
+const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+
 pub async fn create_jrpc_server(state: BrokerState, port: usize) {
     let state = Arc::new(state);
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap_or_else(|_| panic!("Could not bind JRPC server to 0.0.0.0:{port}"));
+
+    // Spawn a task that checks for heartbeats and updates worker states.
+    let heartbeat_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(CHECK_INTERVAL);
+        loop {
+            interval.tick().await;
+            let now = tokio::time::Instant::now();
+            let mut workers = heartbeat_state.worker_registry.write().await;
+            for (_, winfo) in workers.iter_mut() {
+                if now.duration_since(winfo.last_heartbeat) > HEARTBEAT_TIMEOUT {
+                    winfo.active = false;
+                }
+            }
+        }
+    });
 
     loop {
         if let Ok((stream, addr)) = listener.accept().await {
@@ -97,6 +116,11 @@ struct RegisterWorkerRequestParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+struct FetchTaskRequestParams {
+    worker_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct FetchTaskResponseResult {
     task: Option<Task>,
 }
@@ -155,6 +179,26 @@ async fn process_jsonrpc_message(
                 }));
             }
         } else if &request.method == "fetch_task" {
+            let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;
+            if !state
+                .worker_registry
+                .read()
+                .await
+                .contains_key(&req_params.worker_id)
+            {
+                anyhow::bail!("Cannot fetch task from an unregistered worker.");
+            }
+
+            if let Some(winfo) = state
+                .worker_registry
+                .read()
+                .await
+                .get(&req_params.worker_id)
+                && !winfo.active
+            {
+                anyhow::bail!("Cannot fetch task from an inactive worker.");
+            }
+
             if let Some(task) = state.dequeue_task().await {
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
