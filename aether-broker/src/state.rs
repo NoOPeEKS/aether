@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::{sync::{mpsc, Mutex, RwLock}, time::Instant};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -29,11 +29,19 @@ pub enum TaskStatus {
     Failed,
 }
 
+#[derive(Clone, Debug)]
+pub struct WorkerInfo {
+    pub worker_id: String,
+    pub last_heartbeat: Instant,
+    pub active: bool
+}
+
 #[derive(Clone)]
 pub struct BrokerState {
     pub queue_tx: mpsc::Sender<Task>,
     pub queue_rx: Arc<Mutex<mpsc::Receiver<Task>>>,
     pub tasks: Arc<RwLock<HashMap<Uuid, TaskResult>>>,
+    pub worker_registry: Arc<RwLock<HashMap<String, WorkerInfo>>>
 }
 
 impl BrokerState {
@@ -43,6 +51,7 @@ impl BrokerState {
             queue_tx: tx,
             queue_rx: Arc::new(Mutex::new(rx)),
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            worker_registry: Arc::new(RwLock::new(HashMap::new()))
         }
     }
 

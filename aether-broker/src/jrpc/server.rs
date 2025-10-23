@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -6,13 +5,12 @@ use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::jrpc::protocol::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
 };
-use crate::state::{BrokerState, Task};
+use crate::state::{BrokerState, Task, TaskResult, WorkerInfo};
 
 pub async fn create_jrpc_server(state: BrokerState, port: usize) {
     let state = Arc::new(state);
@@ -20,26 +18,18 @@ pub async fn create_jrpc_server(state: BrokerState, port: usize) {
         .await
         .unwrap_or_else(|_| panic!("Could not bind JRPC server to 0.0.0.0:{port}"));
 
-    let workers: HashSet<String> = HashSet::new();
-    let worker_list = Arc::new(RwLock::new(workers));
-
     loop {
         if let Ok((stream, addr)) = listener.accept().await {
             info!("[INFO] Accepted TCP connection from {}", addr);
             let state = Arc::clone(&state);
-            let workers = Arc::clone(&worker_list);
-            tokio::spawn(handle_jrpc_connection(stream, state, workers));
+            tokio::spawn(handle_jrpc_connection(stream, state));
         } else {
             info!("[INFO] Could not accept an incoming connection");
         }
     }
 }
 
-async fn handle_jrpc_connection(
-    stream: TcpStream,
-    state: Arc<BrokerState>,
-    workers: Arc<RwLock<HashSet<String>>>,
-) {
+async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
     let (reader, mut writer) = TcpStream::into_split(stream);
     let mut reader = BufReader::new(reader);
     loop {
@@ -78,9 +68,9 @@ async fn handle_jrpc_connection(
                 continue;
             }
 
-            let workers = Arc::clone(&workers);
-            match process_jsonrpc_message(&message_body, &state, workers).await {
+            match process_jsonrpc_message(&message_body, &state).await {
                 Ok(Some(response)) => {
+                    // Message was a request.
                     let res = serde_json::to_string(&response);
                     match res {
                         Ok(res_str) => {
@@ -91,7 +81,7 @@ async fn handle_jrpc_connection(
                         Err(_) => continue,
                     }
                 }
-                Ok(None) => continue,
+                Ok(None) => continue, // Was just a notification.
                 Err(_) => continue,
             }
         } else {
@@ -114,7 +104,6 @@ struct FetchTaskResponseResult {
 async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
-    workers: Arc<RwLock<HashSet<String>>>,
 ) -> anyhow::Result<Option<JsonRpcResponse>> {
     let message = String::from_utf8_lossy(message);
     let message: serde_json::Value = serde_json::from_str(&message)?;
@@ -124,12 +113,24 @@ async fn process_jsonrpc_message(
 
         if &request.method == "register_worker" {
             let register_req: RegisterWorkerRequestParams = serde_json::from_value(request.params)?;
-            if !workers.read().await.contains(&register_req.worker_id) {
+            if !state
+                .worker_registry
+                .read()
+                .await
+                .contains_key(&register_req.worker_id)
+            {
                 info!(
                     "[INFO] Registered new worker with ID = {}",
                     &register_req.worker_id
                 );
-                workers.write().await.insert(register_req.worker_id);
+                state.worker_registry.write().await.insert(
+                    register_req.worker_id.clone(),
+                    WorkerInfo {
+                        worker_id: register_req.worker_id,
+                        last_heartbeat: tokio::time::Instant::now(),
+                        active: true,
+                    },
+                );
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -148,9 +149,7 @@ async fn process_jsonrpc_message(
                     }),
                 }));
             }
-        }
-
-        if &request.method == "fetch_task" {
+        } else if &request.method == "fetch_task" {
             if let Some(task) = state.dequeue_task().await {
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
@@ -174,7 +173,18 @@ async fn process_jsonrpc_message(
     } else {
         // It's a notification
         let notification: JsonRpcNotification = serde_json::from_value(message)?;
-        if &notification.method == "heartbeat" {} // TODO: Implement heartbeat
+        if &notification.method == "heartbeat" {
+            // TODO: Implement heartbeat
+        } else if &notification.method == "report_result"
+            && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
+            && state.tasks.read().await.contains_key(&task_result.id)
+        {
+            state
+                .tasks
+                .write()
+                .await
+                .insert(task_result.id, task_result);
+        }
     }
     Ok(None)
 }
