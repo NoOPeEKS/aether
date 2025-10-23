@@ -101,6 +101,11 @@ struct FetchTaskResponseResult {
     task: Option<Task>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct HeartbeatNotificationParams {
+    worker_id: String,
+}
+
 async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
@@ -173,8 +178,23 @@ async fn process_jsonrpc_message(
     } else {
         // It's a notification
         let notification: JsonRpcNotification = serde_json::from_value(message)?;
+
         if &notification.method == "heartbeat" {
-            // TODO: Implement heartbeat
+            if let Ok(heartbeat_params) =
+                serde_json::from_value::<HeartbeatNotificationParams>(notification.params)
+                && state
+                    .worker_registry
+                    .read()
+                    .await
+                    .contains_key(&heartbeat_params.worker_id)
+                && let Some(worker_info) = state
+                    .worker_registry
+                    .write()
+                    .await
+                    .get_mut(&heartbeat_params.worker_id)
+            {
+                worker_info.last_heartbeat = tokio::time::Instant::now();
+            }
         } else if &notification.method == "report_result"
             && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
             && state.tasks.read().await.contains_key(&task_result.id)
