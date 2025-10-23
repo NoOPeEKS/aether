@@ -186,7 +186,16 @@ async fn process_jsonrpc_message(
                 .await
                 .contains_key(&req_params.worker_id)
             {
-                anyhow::bail!("Cannot fetch task from an unregistered worker.");
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: JsonRpcErrorCode::InvalidRequest,
+                        message: "Cannot fetch task from non-registered worker.".into(),
+                        data: None,
+                    }),
+                }));
             }
 
             if let Some(winfo) = state
@@ -196,7 +205,16 @@ async fn process_jsonrpc_message(
                 .get(&req_params.worker_id)
                 && !winfo.active
             {
-                anyhow::bail!("Cannot fetch task from an inactive worker.");
+                return Ok(Some(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: JsonRpcErrorCode::InvalidRequest,
+                        message: "Cannot fetch task from an inactive worker".into(),
+                        data: None,
+                    }),
+                }));
             }
 
             if let Some(task) = state.dequeue_task().await {
