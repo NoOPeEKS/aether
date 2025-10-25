@@ -11,8 +11,10 @@ pub struct JsonRpcRequest {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
-    pub id: String, // "workerX-id_here"
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
 
@@ -20,6 +22,7 @@ pub struct JsonRpcResponse {
 pub struct JsonRpcError {
     pub code: JsonRpcErrorCode,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
 
@@ -67,4 +70,3 @@ impl From<JsonRpcErrorCode> for isize {
         }
     }
 }
-

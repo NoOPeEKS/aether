@@ -49,9 +49,9 @@ impl BrokerState {
         _ = self.queue_tx.send(task_send.clone());
     }
 
-    pub async fn dequeue_task(&self) -> Option<Task> {
+    pub async fn dequeue_task(&self) -> Result<Task, tokio::sync::mpsc::error::TryRecvError> {
         let mut rx = self.queue_rx.lock().await;
-        rx.recv().await
+        rx.try_recv()
     }
 
     pub async fn update_result(&self, id: Uuid, result: serde_json::Value) {

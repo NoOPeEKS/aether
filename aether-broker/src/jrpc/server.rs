@@ -118,7 +118,6 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
                     let state_clone = Arc::clone(&state);
                     let response_tx_clone = response_tx.clone();
 
-
                     // Spawn a task to process the response in the background and let the thread
                     // continue iteration to keep reading messages!!!
                     tokio::spawn(async move {
@@ -219,6 +218,7 @@ async fn process_jsonrpc_message(
         } else if &request.method == "fetch_task" {
             let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;
             info!("[INFO] Received a 'fetch_task' request");
+
             if !state
                 .worker_registry
                 .read()
@@ -258,7 +258,7 @@ async fn process_jsonrpc_message(
                 }));
             }
 
-            if let Some(task) = state.dequeue_task().await {
+            if let Ok(task) = state.dequeue_task().await {
                 info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
