@@ -5,7 +5,7 @@ use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tracing::info;
+use tracing::{error, info};
 
 use aether_common::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
@@ -53,16 +53,38 @@ pub async fn create_jrpc_server(state: BrokerState, port: usize) {
 async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
     let (reader, mut writer) = TcpStream::into_split(stream);
     let mut reader = BufReader::new(reader);
+
+    let (response_tx, mut response_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    // Task to handle sending responses back to the client
+    let _response_writer_task = tokio::spawn(async move {
+        while let Some(response_msg) = response_rx.recv().await {
+            if let Err(e) = writer.write_all(response_msg.as_bytes()).await {
+                error!("[ERROR] Failed to write response to client connection: {e}");
+                break;
+            }
+            if let Err(e) = writer.flush().await {
+                error!("[ERROR] Failed to flush response to client connection: {e}");
+                break;
+            }
+        }
+        info!("[INFO] Response writer task for connection ending.");
+    });
+
     loop {
         let mut line = String::new();
 
         let read = match reader.read_line(&mut line).await {
             // Should read "Content-Length: X\r\n"
             Ok(n) => n,
-            Err(_) => continue,
+            Err(e) => {
+                error!("[ERROR] Failed to read line from client: {e}");
+                continue; // Try again if reading fails
+            }
         };
 
         if read == 0 {
+            info!("[INFO] Client closed connection (EOF)");
             break;
         }
 
@@ -74,65 +96,71 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
                 .parse::<usize>()
             {
                 Ok(len) => len,
-                Err(_) => {
+                Err(e) => {
+                    error!("[ERROR] Invalid Content-Length: {e}");
                     // Invalid content length, just continue.
                     continue;
                 }
             };
 
             let mut empty_line = String::new(); // Should read the following \r\n
-            if reader.read_line(&mut empty_line).await.is_err() {
-                continue;
+            match reader.read_line(&mut empty_line).await {
+                Ok(_) => {} // Read the empty line
+                Err(e) => {
+                    error!("[ERROR] Failed to read empty line: {e}");
+                    continue;
+                }
             }
 
             let mut message_body = vec![0; len];
-            if reader.read_exact(&mut message_body).await.is_err() {
-                continue;
-            }
+            match reader.read_exact(&mut message_body).await {
+                Ok(_) => {
+                    let state_clone = Arc::clone(&state);
+                    let response_tx_clone = response_tx.clone();
 
-            match process_jsonrpc_message(&message_body, &state).await {
-                Ok(Some(response)) => {
-                    // Message was a request.
-                    let res = serde_json::to_string(&response);
-                    match res {
-                        Ok(res_str) => {
-                            let response_bytes =
-                                format!("Content-Length: {}\r\n\r\n{}", res_str.len(), res_str);
-                            // TODO: Check these unwraps.
-                            writer.write_all(response_bytes.as_bytes()).await.unwrap();
-                            writer.flush().await.unwrap();
+
+                    // Spawn a task to process the response in the background and let the thread
+                    // continue iteration to keep reading messages!!!
+                    tokio::spawn(async move {
+                        match process_jsonrpc_message(&message_body, &state_clone).await {
+                            Ok(Some(response)) => {
+                                // Message was a request, need to send a response
+                                match serde_json::to_string(&response) {
+                                    Ok(res_str) => {
+                                        let response_bytes = format!(
+                                            "Content-Length: {}\r\n\r\n{}",
+                                            res_str.len(),
+                                            res_str
+                                        );
+                                        // Send the response string via the channel to the writer task
+                                        if let Err(e) = response_tx_clone.send(response_bytes) {
+                                            error!(
+                                                "[ERROR] Failed to send response to writer task: {e}. Client connection likely closed."
+                                            );
+                                        }
+                                    }
+                                    Err(e) => error!("[ERROR] Failed to serialize response: {e}"),
+                                }
+                            }
+                            Ok(None) => {
+                                // Message was a notification, no response needed.
+                            }
+                            Err(e) => error!("[ERROR] Failed to process JSON-RPC message: {e}"),
                         }
-                        Err(_) => continue,
-                    }
+                    });
                 }
-                Ok(None) => continue, // Was just a notification.
-                Err(_) => continue,
+                Err(e) => {
+                    error!("[ERROR] Failed to read full message body: {e}");
+                    continue;
+                }
             }
         } else {
             // Incorrect message, just continue
+            error!("[ERROR] Received invalid header line: {}", line);
             continue;
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RegisterWorkerRequestParams {
-    worker_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FetchTaskRequestParams {
-    worker_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FetchTaskResponseResult {
-    task: Option<Task>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct HeartbeatNotificationParams {
-    worker_id: String,
+    drop(response_tx);
 }
 
 async fn process_jsonrpc_message(
@@ -289,4 +317,24 @@ async fn process_jsonrpc_message(
         }
     }
     Ok(None)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RegisterWorkerRequestParams {
+    worker_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct FetchTaskRequestParams {
+    worker_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct FetchTaskResponseResult {
+    task: Option<Task>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct HeartbeatNotificationParams {
+    worker_id: String,
 }

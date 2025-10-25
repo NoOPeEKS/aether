@@ -13,7 +13,7 @@ use tokio::{
     sync::{RwLock, mpsc},
     time::Duration,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
@@ -114,9 +114,21 @@ pub async fn run_app(
             };
             let body = serde_json::to_string(&heartbeat_notif).unwrap();
             let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
-            if heartbeat_tx.send(msg).await.is_err() {
-                error!("[ERROR] Heartbeat task crashed for some reason");
-                break; // Writer dropped, just break and let the program crash.
+
+            match heartbeat_tx.try_send(msg) {
+                Ok(()) => {
+                    info!("[INFO] Heartbeat sent.");
+                }
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    // Continue the loop potentially missing one heartbeat
+                    warn!("[WARNING] Heartbeat channel is full, skipping heartbeat.")
+                }
+
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    // If writer has stopped just crash this task.
+                    error!("[ERROR] Heartbeat task: Writer channel closed.");
+                    break;
+                }
             }
         }
     });
@@ -124,16 +136,38 @@ pub async fn run_app(
     // Writer task
     let writer_task = tokio::spawn(async move {
         info!("[INFO] Starting writer task");
-        while let Some(msg) = rx.recv().await {
-            if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                error!("[ERROR] Failed to write message to socket: {e}");
-                break; // Break to kill task and crash the program.
-            }
-            if let Err(e) = writer.flush().await {
-                error!("[ERROR] Failed to flush messages to socket: {e}");
-                break;
+        loop {
+            let msg = match rx.recv().await {
+                Some(m) => m,
+                None => {
+                    info!("[INFO] Stopping writer task due to channel closed.");
+                    break;
+                }
+            };
+
+            let write_result = tokio::time::timeout(Duration::from_secs(10), async {
+                writer.write_all(msg.as_bytes()).await?;
+                writer.flush().await?;
+                Ok::<(), std::io::Error>(())
+            })
+            .await;
+
+            match write_result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    error!("[ERROR] Failed to write/flush message to socket within timeout: {e}");
+                    break;
+                }
+                Err(_) => {
+                    // Timeout elapsed
+                    error!(
+                        "[ERROR] Timed out while trying to write/flush message to socket."
+                    );
+                    break;
+                }
             }
         }
+        info!("[INFO] Writer task ending");
     });
 
     // Reader task
@@ -191,39 +225,50 @@ pub async fn run_app(
         }
     });
 
-    // let fetcher_tx = tx.clone();
-    // let fetcher_state = Arc::clone(&worker_state);
-    // let fetcher_task = tokio::spawn(async move {
-    //     info!("[INFO] Starting fetching task");
-    //     let mut interval = tokio::time::interval(Duration::from_secs(5));
-    //     loop {
-    //         interval.tick().await;
-    //         if fetcher_state.task_list.read().await.len() < max_concurrent_tasks {
-    //             let fetch_task_msg = JsonRpcRequest {
-    //                 jsonrpc: "2.0".into(),
-    //                 id: next_id().to_string(),
-    //                 method: "fetch_task".into(),
-    //                 params: json!({
-    //                     "worker_id": fetcher_state.id,
-    //                 }),
-    //             };
-    //             let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
-    //             let msg = format!(
-    //                 "Content-Length: {}\r\n\r\n{}",
-    //                 fetch_task_body.len(),
-    //                 fetch_task_body
-    //             );
-    //             if fetcher_tx.send(msg).await.is_err() {
-    //                 break; // For now we just break out of it and make the whole program crash.
-    //             }
-    //         }
-    //     }
-    // });
+    let fetcher_tx = tx.clone();
+    let fetcher_state = Arc::clone(&worker_state);
+    let fetcher_task = tokio::spawn(async move {
+        info!("[INFO] Starting fetching task");
+        let mut interval = tokio::time::interval(Duration::from_secs(7));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if fetcher_state.task_list.read().await.len() < max_concurrent_tasks {
+                let fetch_task_msg = JsonRpcRequest {
+                    jsonrpc: "2.0".into(),
+                    id: next_id().to_string(),
+                    method: "fetch_task".into(),
+                    params: json!({
+                        "worker_id": fetcher_state.id,
+                    }),
+                };
+                let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
+                let msg = format!(
+                    "Content-Length: {}\r\n\r\n{}",
+                    fetch_task_body.len(),
+                    fetch_task_body
+                );
+
+                match fetcher_tx.try_send(msg) {
+                    Ok(()) => {
+                        info!("[INFO] Fetch_task request sent.");
+                    }
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        warn!("[WARNING] Fetch task channel is full, skipping fetch_task attempt.");
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        error!("[ERROR] Fetcher task: Writer channel closed.");
+                        break;
+                    }
+                }
+            }
+        }
+    });
 
     tokio::select! {
         _ = writer_task => error!("[ERROR] Writer task crashed."),
         _ = reader_task => error!("[ERROR] Reader task crashed."),
-        // _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
+        _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
         _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
     };
     Ok(())
