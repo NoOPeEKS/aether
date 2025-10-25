@@ -38,6 +38,7 @@ dependencies = [
 name = "aether-worker"
 version = "0.1.0"
 dependencies = [
+ "aether-broker",
  "aether-common",
  "anyhow",
  "serde",

@@ -1,4 +1,8 @@
-use aether_common::jrpc::{JsonRpcRequest, JsonRpcResponse};
+use std::{
+    collections::HashMap,
+    sync::{Arc, atomic::AtomicUsize},
+};
+
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -6,10 +10,34 @@ use tokio::{
         TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::mpsc,
+    sync::{RwLock, mpsc},
     time::Duration,
 };
-use tracing::error;
+use tracing::{error, info};
+use uuid::Uuid;
+
+use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
+use aether_common::task::{Task, TaskResult, TaskStatus};
+
+static ID: AtomicUsize = AtomicUsize::new(1);
+
+fn next_id() -> usize {
+    ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+struct WorkerState {
+    id: String,
+    task_list: RwLock<HashMap<Uuid, Task>>,
+}
+
+impl WorkerState {
+    pub fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            task_list: RwLock::new(HashMap::new()),
+        }
+    }
+}
 
 async fn register_worker(
     reader: &mut BufReader<OwnedReadHalf>,
@@ -18,7 +46,7 @@ async fn register_worker(
 ) -> anyhow::Result<()> {
     let register_worker_body = JsonRpcRequest {
         jsonrpc: "2.0".into(),
-        id: "1".into(),
+        id: format!("{}", next_id()),
         method: "register_worker".into(),
         params: json!({
             "worker_id": worker_id.to_string(),
@@ -41,7 +69,7 @@ async fn register_worker(
         let mut body = vec![0; len];
         reader.read_exact(&mut body).await?;
 
-        let response: JsonRpcResponse = serde_json::from_str(&line)?;
+        let response: JsonRpcResponse = serde_json::from_slice(&body)?;
         if let Some(res) = response.result
             && res == json!({"status": "registered"})
         {
@@ -54,34 +82,40 @@ async fn register_worker(
     }
 }
 
-pub async fn run_app(remote_rpc_server_ip: &str, worker_id: &str) -> anyhow::Result<()> {
+pub async fn run_app(
+    remote_rpc_server_ip: &str,
+    worker_id: &str,
+    max_concurrent_tasks: usize,
+) -> anyhow::Result<()> {
+    let worker_state = Arc::new(WorkerState::new(worker_id));
     let stream = TcpStream::connect(remote_rpc_server_ip).await?;
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    let (tx, mut rx) = mpsc::channel::<String>(10);
+    let (tx, mut rx) = mpsc::channel::<String>(9999999999); // WE DO STRINGS FOR NOW BECAUSE WE DON'T KNOW
+    // IF NOTIFICATION OR REQUEST. JUST SERIALIZE THEM.
 
     register_worker(&mut reader, &mut writer, worker_id).await?;
 
     // Heartbeat task
     let heartbeat_tx = tx.clone();
-    tokio::spawn(async move {
+    let heartbeat_state = Arc::clone(&worker_state);
+    let heartbeat_task = tokio::spawn(async move {
+        info!("[INFO] Starting heartbeat task");
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {
             interval.tick().await;
-            let heartbeat_message = json!({
-                "jsonrpc": "2.0",
-                "method": "heartbeat",
-                "params": {
-                    "worker_id": "worker1",
-                }
-            });
-            let msg = format!(
-                "Content-Length: {}\r\n\r\n{}",
-                heartbeat_message.to_string().len(),
-                heartbeat_message
-            );
+            let heartbeat_notif = JsonRpcNotification {
+                jsonrpc: "2.0".into(),
+                method: "heartbeat".into(),
+                params: json!({
+                    "worker_id": heartbeat_state.id,
+                }),
+            };
+            let body = serde_json::to_string(&heartbeat_notif).unwrap();
+            let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
             if heartbeat_tx.send(msg).await.is_err() {
+                error!("[ERROR] Heartbeat task crashed for some reason");
                 break; // Writer dropped, just break and let the program crash.
             }
         }
@@ -89,80 +123,108 @@ pub async fn run_app(remote_rpc_server_ip: &str, worker_id: &str) -> anyhow::Res
 
     // Writer task
     let writer_task = tokio::spawn(async move {
+        info!("[INFO] Starting writer task");
         while let Some(msg) = rx.recv().await {
             if let Err(e) = writer.write_all(msg.as_bytes()).await {
                 error!("[ERROR] Failed to write message to socket: {e}");
                 break; // Break to kill task and crash the program.
             }
+            if let Err(e) = writer.flush().await {
+                error!("[ERROR] Failed to flush messages to socket: {e}");
+                break;
+            }
         }
     });
 
     // Reader task
+    let _reader_state = Arc::clone(&worker_state);
     let reader_task = tokio::spawn(async move {
+        info!("[INFO] Starting reader task");
+
         loop {
-            let mut line = String::new();
+            let mut headers = String::new();
+            let mut content_length: Option<usize> = None;
 
-            let read = match reader.read_line(&mut line).await {
-                Ok(n) => n,
-                Err(_) => continue,
-            };
-
-            if read == 0 {
-                break;
-            }
-
-            if line.starts_with("Content-Length: ") {
-                // Correct message
-                let len = match line
-                    .trim_start_matches("Content-Length: ")
-                    .trim()
-                    .parse::<usize>()
-                {
-                    Ok(len) => len,
-                    Err(_) => {
-                        // Invalid content length, just continue.
-                        continue;
+            // Read headers until empty line
+            loop {
+                headers.clear();
+                let _n = match reader.read_line(&mut headers).await {
+                    Ok(0) => {
+                        info!("[INFO] Server closed connection");
+                        return;
+                    }
+                    Ok(n) => n,
+                    Err(e) => {
+                        error!("[ERROR] Failed to read line from broker: {e}");
+                        return;
                     }
                 };
 
-                let mut empty_line = String::new();
-                if reader.read_line(&mut empty_line).await.is_err() {
-                    continue;
+                let trimmed = headers.trim();
+                if trimmed.is_empty() {
+                    break;
                 }
 
-                let mut message_body = vec![0; len];
-                if reader.read_exact(&mut message_body).await.is_err() {
-                    continue;
+                if let Some(val) = trimmed.strip_prefix("Content-Length: ")
+                    && let Ok(len) = val.trim().parse::<usize>()
+                {
+                    content_length = Some(len);
                 }
-
-                // TODO: Process message.
-
-                // match process_jsonrpc_message(&message_body, &state).await {
-                //     Ok(Some(response)) => {
-                //         // Message was a request.
-                //         let res = serde_json::to_string(&response);
-                //         match res {
-                //             Ok(res_str) => {
-                //                 let response_bytes =
-                //                     format!("Content-Length: {}\r\n\r\n{}", res_str.len(), res_str);
-                //                 writer.write_all(response_bytes.as_bytes()).await.unwrap();
-                //             }
-                //             Err(_) => continue,
-                //         }
-                //     }
-                //     Ok(None) => continue, // Was just a notification.
-                //     Err(_) => continue,
-                // }
-            } else {
-                // Incorrect message, just continue
-                continue;
             }
+
+            let len = match content_length {
+                Some(len) => len,
+                None => {
+                    error!("[ERROR] No Content-Length header received");
+                    continue;
+                }
+            };
+
+            let mut body = vec![0u8; len];
+            if let Err(e) = reader.read_exact(&mut body).await {
+                error!("[ERROR] Failed to read full response body: {e}");
+                return;
+            }
+
+            let msg = String::from_utf8_lossy(&body);
+            info!("[INFO] Received from broker: {}", msg);
         }
     });
+
+    // let fetcher_tx = tx.clone();
+    // let fetcher_state = Arc::clone(&worker_state);
+    // let fetcher_task = tokio::spawn(async move {
+    //     info!("[INFO] Starting fetching task");
+    //     let mut interval = tokio::time::interval(Duration::from_secs(5));
+    //     loop {
+    //         interval.tick().await;
+    //         if fetcher_state.task_list.read().await.len() < max_concurrent_tasks {
+    //             let fetch_task_msg = JsonRpcRequest {
+    //                 jsonrpc: "2.0".into(),
+    //                 id: next_id().to_string(),
+    //                 method: "fetch_task".into(),
+    //                 params: json!({
+    //                     "worker_id": fetcher_state.id,
+    //                 }),
+    //             };
+    //             let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
+    //             let msg = format!(
+    //                 "Content-Length: {}\r\n\r\n{}",
+    //                 fetch_task_body.len(),
+    //                 fetch_task_body
+    //             );
+    //             if fetcher_tx.send(msg).await.is_err() {
+    //                 break; // For now we just break out of it and make the whole program crash.
+    //             }
+    //         }
+    //     }
+    // });
 
     tokio::select! {
         _ = writer_task => error!("[ERROR] Writer task crashed."),
         _ = reader_task => error!("[ERROR] Reader task crashed."),
-    }
+        // _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
+        _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
+    };
     Ok(())
 }

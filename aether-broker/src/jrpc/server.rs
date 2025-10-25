@@ -57,6 +57,7 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
         let mut line = String::new();
 
         let read = match reader.read_line(&mut line).await {
+            // Should read "Content-Length: X\r\n"
             Ok(n) => n,
             Err(_) => continue,
         };
@@ -79,7 +80,7 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
                 }
             };
 
-            let mut empty_line = String::new();
+            let mut empty_line = String::new(); // Should read the following \r\n
             if reader.read_line(&mut empty_line).await.is_err() {
                 continue;
             }
@@ -97,7 +98,9 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
                         Ok(res_str) => {
                             let response_bytes =
                                 format!("Content-Length: {}\r\n\r\n{}", res_str.len(), res_str);
+                            // TODO: Check these unwraps.
                             writer.write_all(response_bytes.as_bytes()).await.unwrap();
+                            writer.flush().await.unwrap();
                         }
                         Err(_) => continue,
                     }
@@ -136,6 +139,7 @@ async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
 ) -> anyhow::Result<Option<JsonRpcResponse>> {
+    info!("[WARNING] Something hit the process_jsonrpc_message");
     let message = String::from_utf8_lossy(message);
     let message: serde_json::Value = serde_json::from_str(&message)?;
     if message.get("id").is_some() {
