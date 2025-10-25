@@ -67,3 +67,4 @@ impl From<JsonRpcErrorCode> for isize {
         }
     }
 }
+

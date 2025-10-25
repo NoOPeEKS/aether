@@ -7,10 +7,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::info;
 
-use crate::jrpc::protocol::{
+use aether_common::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
 };
-use crate::state::{BrokerState, Task, TaskResult, WorkerInfo};
+use aether_common::task::{Task, TaskResult};
+
+use crate::state::{BrokerState, WorkerInfo};
 
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);

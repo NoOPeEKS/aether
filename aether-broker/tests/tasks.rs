@@ -1,6 +1,6 @@
-use aether_broker::state::{TaskResult, TaskStatus};
 use aether_broker::api::tasks::{CreateTaskResponse, GetAllTasksResponse};
 use aether_broker::{BrokerState, build_router};
+use aether_common::task::TaskStatus;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::json;

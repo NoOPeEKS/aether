@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use aether_broker::jrpc::protocol::JsonRpcRequest;
+use aether_common::jrpc::JsonRpcRequest;
 use aether_broker::jrpc::server::create_jrpc_server;
 use aether_broker::state::BrokerState;
 use serde_json::json;

@@ -3,7 +3,9 @@ use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::state::{BrokerState, Task, TaskResult, TaskStatus};
+use aether_common::task::{Task, TaskResult, TaskStatus};
+
+use crate::state::BrokerState;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateTaskRequest {
