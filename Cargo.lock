@@ -37,6 +37,17 @@ dependencies = [
 [[package]]
 name = "aether-worker"
 version = "0.1.0"
+dependencies = [
+ "aether-common",
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "anyhow"
