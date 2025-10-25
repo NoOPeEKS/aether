@@ -167,6 +167,10 @@ async fn process_jsonrpc_message(
                     error: None,
                 }));
             } else {
+                info!(
+                    "[INFO] Could not register. A worker with ID = {} already exists.",
+                    &register_req.worker_id
+                );
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -180,12 +184,14 @@ async fn process_jsonrpc_message(
             }
         } else if &request.method == "fetch_task" {
             let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;
+            info!("[INFO] Received a 'fetch_task' request");
             if !state
                 .worker_registry
                 .read()
                 .await
                 .contains_key(&req_params.worker_id)
             {
+                info!("[INFO] Could not fetch task from a non-registered worker.");
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -205,6 +211,7 @@ async fn process_jsonrpc_message(
                 .get(&req_params.worker_id)
                 && !winfo.active
             {
+                info!("[INFO] Could not fetch task from an inactive worker.");
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -218,6 +225,7 @@ async fn process_jsonrpc_message(
             }
 
             if let Some(task) = state.dequeue_task().await {
+                info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -227,6 +235,7 @@ async fn process_jsonrpc_message(
                     error: None,
                 }));
             } else {
+                info!("[INFO] Sending None task to ID = {}", &req_params.worker_id);
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
@@ -255,12 +264,17 @@ async fn process_jsonrpc_message(
                     .await
                     .get_mut(&heartbeat_params.worker_id)
             {
+                info!(
+                    "[INFO] Heartbeat notification received from ID = {}",
+                    &worker_info.worker_id
+                );
                 worker_info.last_heartbeat = tokio::time::Instant::now();
             }
         } else if &notification.method == "report_result"
             && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
             && state.tasks.read().await.contains_key(&task_result.id)
         {
+            info!("[INFO] Result from task ID = {} received.", task_result.id);
             state
                 .tasks
                 .write()
