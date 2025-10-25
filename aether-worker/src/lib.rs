@@ -1,22 +1,69 @@
+use aether_common::jrpc::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::TcpStream,
+    net::{
+        TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
     sync::mpsc,
     time::Duration,
 };
 use tracing::error;
 
-pub async fn run_app(remote_rpc_server_ip: &str) -> anyhow::Result<()> {
+async fn register_worker(
+    reader: &mut BufReader<OwnedReadHalf>,
+    writer: &mut OwnedWriteHalf,
+    worker_id: &str,
+) -> anyhow::Result<()> {
+    let register_worker_body = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: "1".into(),
+        method: "register_worker".into(),
+        params: json!({
+            "worker_id": worker_id.to_string(),
+        }),
+    };
+    let body = serde_json::to_string(&register_worker_body)?;
+    writer
+        .write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes())
+        .await?;
+
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+    if line.starts_with("Content-Length: ") {
+        let len = line
+            .trim_start_matches("Content-Length: ")
+            .trim()
+            .parse::<usize>()?;
+
+        reader.read_line(&mut line).await?; // Read empty line.
+        let mut body = vec![0; len];
+        reader.read_exact(&mut body).await?;
+
+        let response: JsonRpcResponse = serde_json::from_str(&line)?;
+        if let Some(res) = response.result
+            && res == json!({"status": "registered"})
+        {
+            Ok(())
+        } else {
+            anyhow::bail!("Register_worker response was not correct.");
+        }
+    } else {
+        anyhow::bail!("Could not read bytes of register_worker response");
+    }
+}
+
+pub async fn run_app(remote_rpc_server_ip: &str, worker_id: &str) -> anyhow::Result<()> {
     let stream = TcpStream::connect(remote_rpc_server_ip).await?;
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
     let (tx, mut rx) = mpsc::channel::<String>(10);
 
+    register_worker(&mut reader, &mut writer, worker_id).await?;
+
     // Heartbeat task
-    // TODO: Only heartbeat after initialization.
-    // TODO: Some synchronization registration variable to know if registered.
     let heartbeat_tx = tx.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -41,7 +88,6 @@ pub async fn run_app(remote_rpc_server_ip: &str) -> anyhow::Result<()> {
     });
 
     // Writer task
-    // TODO: Send register_worker message on init, only once.
     let writer_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let Err(e) = writer.write_all(msg.as_bytes()).await {
