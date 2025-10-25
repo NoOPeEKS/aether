@@ -15,6 +15,8 @@ pub async fn run_app(remote_rpc_server_ip: &str) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::channel::<String>(10);
 
     // Heartbeat task
+    // TODO: Only heartbeat after initialization.
+    // TODO: Some synchronization registration variable to know if registered.
     let heartbeat_tx = tx.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -39,6 +41,7 @@ pub async fn run_app(remote_rpc_server_ip: &str) -> anyhow::Result<()> {
     });
 
     // Writer task
+    // TODO: Send register_worker message on init, only once.
     let writer_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let Err(e) = writer.write_all(msg.as_bytes()).await {
