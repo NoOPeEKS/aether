@@ -71,6 +71,41 @@ pub async fn heartbeat_clock(heartbeat_tx: mpsc::Sender<String>, state: Arc<Work
         }
     }
 }
+
+pub async fn writer_loop(mut rx: mpsc::Receiver<String>, mut writer: OwnedWriteHalf) {
+    info!("[INFO] Starting writer task");
+    loop {
+        let msg = match rx.recv().await {
+            Some(m) => m,
+            None => {
+                info!("[INFO] Stopping writer task due to channel closed.");
+                break;
+            }
+        };
+
+        let write_result = tokio::time::timeout(Duration::from_secs(10), async {
+            writer.write_all(msg.as_bytes()).await?;
+            writer.flush().await?;
+            Ok::<(), std::io::Error>(())
+        })
+        .await;
+
+        match write_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!("[ERROR] Failed to write/flush message to socket within timeout: {e}");
+                break;
+            }
+            Err(_) => {
+                // Timeout elapsed
+                error!("[ERROR] Timed out while trying to write/flush message to socket.");
+                break;
+            }
+        }
+    }
+    info!("[INFO] Writer task ending");
+}
+
 pub async fn run_app(
     remote_rpc_server_ip: &str,
     worker_id: &str,
@@ -92,39 +127,7 @@ pub async fn run_app(
     let heartbeat_task = tokio::spawn(heartbeat_clock(heartbeat_tx, heartbeat_state));
 
     // Writer task
-    let writer_task = tokio::spawn(async move {
-        info!("[INFO] Starting writer task");
-        loop {
-            let msg = match rx.recv().await {
-                Some(m) => m,
-                None => {
-                    info!("[INFO] Stopping writer task due to channel closed.");
-                    break;
-                }
-            };
-
-            let write_result = tokio::time::timeout(Duration::from_secs(10), async {
-                writer.write_all(msg.as_bytes()).await?;
-                writer.flush().await?;
-                Ok::<(), std::io::Error>(())
-            })
-            .await;
-
-            match write_result {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    error!("[ERROR] Failed to write/flush message to socket within timeout: {e}");
-                    break;
-                }
-                Err(_) => {
-                    // Timeout elapsed
-                    error!("[ERROR] Timed out while trying to write/flush message to socket.");
-                    break;
-                }
-            }
-        }
-        info!("[INFO] Writer task ending");
-    });
+    let writer_task = tokio::spawn(writer_loop(rx, writer));
 
     // Reader task
     let _reader_state = Arc::clone(&worker_state);
