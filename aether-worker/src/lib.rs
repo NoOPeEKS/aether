@@ -25,7 +25,7 @@ fn next_id() -> usize {
     ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
 }
 
-struct WorkerState {
+pub struct WorkerState {
     id: String,
     task_list: RwLock<HashMap<Uuid, Task>>,
 }
@@ -39,49 +39,38 @@ impl WorkerState {
     }
 }
 
-async fn register_worker(
-    reader: &mut BufReader<OwnedReadHalf>,
-    writer: &mut OwnedWriteHalf,
-    worker_id: &str,
-) -> anyhow::Result<()> {
-    let register_worker_body = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: format!("{}", next_id()),
-        method: "register_worker".into(),
-        params: json!({
-            "worker_id": worker_id.to_string(),
-        }),
-    };
-    let body = serde_json::to_string(&register_worker_body)?;
-    writer
-        .write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes())
-        .await?;
+pub async fn heartbeat_clock(heartbeat_tx: mpsc::Sender<String>, state: Arc<WorkerState>) {
+    info!("[INFO] Starting heartbeat task");
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        interval.tick().await;
+        let heartbeat_notif = JsonRpcNotification {
+            jsonrpc: "2.0".into(),
+            method: "heartbeat".into(),
+            params: json!({
+                "worker_id": state.id,
+            }),
+        };
+        let body = serde_json::to_string(&heartbeat_notif).unwrap();
+        let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
 
-    let mut line = String::new();
-    reader.read_line(&mut line).await?;
-    if line.starts_with("Content-Length: ") {
-        let len = line
-            .trim_start_matches("Content-Length: ")
-            .trim()
-            .parse::<usize>()?;
+        match heartbeat_tx.try_send(msg) {
+            Ok(()) => {
+                info!("[INFO] Heartbeat sent.");
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                // Continue the loop potentially missing one heartbeat
+                warn!("[WARNING] Heartbeat channel is full, skipping heartbeat.")
+            }
 
-        reader.read_line(&mut line).await?; // Read empty line.
-        let mut body = vec![0; len];
-        reader.read_exact(&mut body).await?;
-
-        let response: JsonRpcResponse = serde_json::from_slice(&body)?;
-        if let Some(res) = response.result
-            && res == json!({"status": "registered"})
-        {
-            Ok(())
-        } else {
-            anyhow::bail!("Register_worker response was not correct.");
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                // If writer has stopped just crash this task.
+                error!("[ERROR] Heartbeat task: Writer channel closed.");
+                break;
+            }
         }
-    } else {
-        anyhow::bail!("Could not read bytes of register_worker response");
     }
 }
-
 pub async fn run_app(
     remote_rpc_server_ip: &str,
     worker_id: &str,
@@ -100,38 +89,7 @@ pub async fn run_app(
     // Heartbeat task
     let heartbeat_tx = tx.clone();
     let heartbeat_state = Arc::clone(&worker_state);
-    let heartbeat_task = tokio::spawn(async move {
-        info!("[INFO] Starting heartbeat task");
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            let heartbeat_notif = JsonRpcNotification {
-                jsonrpc: "2.0".into(),
-                method: "heartbeat".into(),
-                params: json!({
-                    "worker_id": heartbeat_state.id,
-                }),
-            };
-            let body = serde_json::to_string(&heartbeat_notif).unwrap();
-            let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
-
-            match heartbeat_tx.try_send(msg) {
-                Ok(()) => {
-                    info!("[INFO] Heartbeat sent.");
-                }
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    // Continue the loop potentially missing one heartbeat
-                    warn!("[WARNING] Heartbeat channel is full, skipping heartbeat.")
-                }
-
-                Err(mpsc::error::TrySendError::Closed(_)) => {
-                    // If writer has stopped just crash this task.
-                    error!("[ERROR] Heartbeat task: Writer channel closed.");
-                    break;
-                }
-            }
-        }
-    });
+    let heartbeat_task = tokio::spawn(heartbeat_clock(heartbeat_tx, heartbeat_state));
 
     // Writer task
     let writer_task = tokio::spawn(async move {
@@ -160,9 +118,7 @@ pub async fn run_app(
                 }
                 Err(_) => {
                     // Timeout elapsed
-                    error!(
-                        "[ERROR] Timed out while trying to write/flush message to socket."
-                    );
+                    error!("[ERROR] Timed out while trying to write/flush message to socket.");
                     break;
                 }
             }
@@ -272,4 +228,47 @@ pub async fn run_app(
         _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
     };
     Ok(())
+}
+
+async fn register_worker(
+    reader: &mut BufReader<OwnedReadHalf>,
+    writer: &mut OwnedWriteHalf,
+    worker_id: &str,
+) -> anyhow::Result<()> {
+    let register_worker_body = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: format!("{}", next_id()),
+        method: "register_worker".into(),
+        params: json!({
+            "worker_id": worker_id.to_string(),
+        }),
+    };
+    let body = serde_json::to_string(&register_worker_body)?;
+    writer
+        .write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes())
+        .await?;
+
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+    if line.starts_with("Content-Length: ") {
+        let len = line
+            .trim_start_matches("Content-Length: ")
+            .trim()
+            .parse::<usize>()?;
+
+        reader.read_line(&mut line).await?; // Read empty line.
+        let mut body = vec![0; len];
+        reader.read_exact(&mut body).await?;
+
+        let response: JsonRpcResponse = serde_json::from_slice(&body)?;
+        if let Some(res) = response.result
+            && res == json!({"status": "registered"})
+        {
+            Ok(())
+        } else {
+            anyhow::bail!("Register_worker response was not correct.");
+        }
+    } else {
+        anyhow::bail!("Could not read bytes of register_worker response");
+    }
 }

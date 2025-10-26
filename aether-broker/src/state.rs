@@ -46,6 +46,7 @@ impl BrokerState {
                 status: TaskStatus::Queued,
             },
         );
+        // TODO: Handle non able to send correctly.
         _ = self.queue_tx.send(task_send.clone());
     }
 
