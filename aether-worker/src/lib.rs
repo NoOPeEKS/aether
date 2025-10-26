@@ -186,43 +186,7 @@ pub async fn run_app(
 
     let fetcher_tx = tx.clone();
     let fetcher_state = Arc::clone(&worker_state);
-    let fetcher_task = tokio::spawn(async move {
-        info!("[INFO] Starting fetching task");
-        let mut interval = tokio::time::interval(Duration::from_secs(7));
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            if fetcher_state.task_list.read().await.len() < max_concurrent_tasks {
-                let fetch_task_msg = JsonRpcRequest {
-                    jsonrpc: "2.0".into(),
-                    id: next_id().to_string(),
-                    method: "fetch_task".into(),
-                    params: json!({
-                        "worker_id": fetcher_state.id,
-                    }),
-                };
-                let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
-                let msg = format!(
-                    "Content-Length: {}\r\n\r\n{}",
-                    fetch_task_body.len(),
-                    fetch_task_body
-                );
-
-                match fetcher_tx.try_send(msg) {
-                    Ok(()) => {
-                        info!("[INFO] Fetch_task request sent.");
-                    }
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        warn!("[WARNING] Fetch task channel is full, skipping fetch_task attempt.");
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                        error!("[ERROR] Fetcher task: Writer channel closed.");
-                        break;
-                    }
-                }
-            }
-        }
-    });
+    let fetcher_task = tokio::spawn(fetch_loop(fetcher_tx, fetcher_state, max_concurrent_tasks));
 
     tokio::select! {
         _ = writer_task => error!("[ERROR] Writer task crashed."),
@@ -231,6 +195,48 @@ pub async fn run_app(
         _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
     };
     Ok(())
+}
+
+pub async fn fetch_loop(
+    fetcher_tx: mpsc::Sender<String>,
+    state: Arc<WorkerState>,
+    max_concurrent_tasks: usize,
+) {
+    info!("[INFO] Starting fetching task");
+    let mut interval = tokio::time::interval(Duration::from_secs(7));
+    interval.tick().await;
+    loop {
+        interval.tick().await;
+        if state.task_list.read().await.len() < max_concurrent_tasks {
+            let fetch_task_msg = JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                id: next_id().to_string(),
+                method: "fetch_task".into(),
+                params: json!({
+                    "worker_id": state.id,
+                }),
+            };
+            let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
+            let msg = format!(
+                "Content-Length: {}\r\n\r\n{}",
+                fetch_task_body.len(),
+                fetch_task_body
+            );
+
+            match fetcher_tx.try_send(msg) {
+                Ok(()) => {
+                    info!("[INFO] Fetch_task request sent.");
+                }
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    warn!("[WARNING] Fetch task channel is full, skipping fetch_task attempt.");
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    error!("[ERROR] Fetcher task: Writer channel closed.");
+                    break;
+                }
+            }
+        }
+    }
 }
 
 async fn register_worker(
