@@ -192,7 +192,7 @@ async fn writer_loop(mut rx: mpsc::Receiver<String>, mut writer: OwnedWriteHalf)
     info!("[INFO] Writer task ending");
 }
 
-async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, _state: Arc<WorkerState>) {
+async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, state: Arc<WorkerState>) {
     info!("[INFO] Starting reader task");
 
     loop {
@@ -242,6 +242,7 @@ async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, _state: Arc<WorkerSta
 
         let msg = String::from_utf8_lossy(&body);
         info!("[INFO] Received from broker: {}", msg);
+        tokio::spawn(handle_server_message(msg.into(), Arc::clone(&state)));
     }
 }
 
@@ -284,5 +285,38 @@ async fn fetch_loop(
                 }
             }
         }
+    }
+}
+
+async fn handle_server_message(message: String, state: Arc<WorkerState>) {
+    let message = serde_json::to_value(&message).unwrap();
+    if message.get("id").is_some() {
+        // It was a response.
+        let response: JsonRpcResponse = serde_json::from_value(message).unwrap();
+        if let Some(error) = response.error {
+            // Something happened with the request and we got back an error. For now we just log it
+            warn!(
+                "[WARNING] Request with id {} got response with an error code: {}. Message: {}",
+                response.id, error.code, error.message
+            );
+        } else {
+            // Actual response
+            if let Some(result) = response.result
+                && let Some(task_val) = result.get("task")
+                && let Ok(task) = serde_json::from_value::<Task>(task_val.clone())
+            {
+                // This was a response to a fetch task.
+                let task_id = task.id;
+                state.task_list.write().await.insert(task_id, task);
+                info!(
+                    "[INFO] Got a 'fetch_task' response from server and queued task {} into worker queue",
+                    task_id
+                );
+            }
+        }
+    } else {
+        // It was a notification.
+        // We will do nothing as of now because we just haven't programmed any broker-->worker
+        // notification.
     }
 }

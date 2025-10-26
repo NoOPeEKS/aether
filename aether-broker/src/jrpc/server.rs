@@ -196,7 +196,9 @@ async fn process_jsonrpc_message(
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: request.id,
-                    result: Some(json!({"status": "registered"})),
+                    result: Some(serde_json::to_value(RegisterWorkerResponseParams {
+                        status: "registered".into(),
+                    })?),
                     error: None,
                 }));
             } else {
@@ -322,6 +324,11 @@ async fn process_jsonrpc_message(
 #[derive(Serialize, Deserialize, Debug)]
 struct RegisterWorkerRequestParams {
     worker_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RegisterWorkerResponseParams {
+    status: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

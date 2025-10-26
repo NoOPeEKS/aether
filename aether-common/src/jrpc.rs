@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -41,6 +43,19 @@ pub enum JsonRpcErrorCode {
     InvalidParams,
     InternalError,
     ServerError,
+}
+
+impl Display for JsonRpcErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonRpcErrorCode::ParseError => write!(f, "Parse Error (-32700)"),
+            JsonRpcErrorCode::InvalidRequest => write!(f, "InvalidRequest Error (-32600)"),
+            JsonRpcErrorCode::MethodNotFound => write!(f, "MethodNotFound Error (-32601)"),
+            JsonRpcErrorCode::InvalidParams => write!(f, "InvalidParams Error (-32602)"),
+            JsonRpcErrorCode::InternalError => write!(f, "Internal Error (-32603)"),
+            JsonRpcErrorCode::ServerError => write!(f, "Server Error"),
+        }
+    }
 }
 
 impl From<isize> for JsonRpcErrorCode {
