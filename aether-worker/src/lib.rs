@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::VecDeque,
     sync::{Arc, atomic::AtomicUsize},
 };
 
@@ -14,7 +14,6 @@ use tokio::{
     time::Duration,
 };
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 use aether_common::task::{Task, TaskResult, TaskStatus};
@@ -27,14 +26,14 @@ fn next_id() -> usize {
 
 struct WorkerState {
     id: String,
-    task_list: RwLock<HashMap<Uuid, Task>>,
+    task_list: RwLock<VecDeque<Task>>,
 }
 
 impl WorkerState {
     pub fn new(id: &str) -> Self {
         Self {
             id: id.to_string(),
-            task_list: RwLock::new(HashMap::new()),
+            task_list: RwLock::new(VecDeque::new()),
         }
     }
 }
@@ -73,11 +72,17 @@ pub async fn run_app(
     let fetcher_state = Arc::clone(&worker_state);
     let fetcher_task = tokio::spawn(fetch_loop(fetcher_tx, fetcher_state, max_concurrent_tasks));
 
+    // Executor task
+    let executor_tx = tx.clone();
+    let executor_state = Arc::clone(&worker_state);
+    let executor_task = tokio::spawn(executor_loop(executor_tx, executor_state));
+
     tokio::select! {
         _ = writer_task => error!("[ERROR] Writer task crashed."),
         _ = reader_task => error!("[ERROR] Reader task crashed."),
         _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
         _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
+        _ = executor_task => error!("[ERROR] Executor task crashed."),
     };
     Ok(())
 }
@@ -288,6 +293,28 @@ async fn fetch_loop(
     }
 }
 
+async fn executor_loop(executor_tx: mpsc::Sender<String>, state: Arc<WorkerState>) {
+    info!("[INFO] Starting executor loop task");
+    loop {
+        if let Some(task) = state.task_list.write().await.pop_front() {
+            let updated_task_status = TaskResult {
+                id: task.id,
+                name: task.name,
+                args: task.args,
+                result: None,
+                status: TaskStatus::Running,
+            };
+            // TODO: Check these unwrap.
+            let msg = serde_json::to_string(&updated_task_status).unwrap();
+            executor_tx.send(msg).await.unwrap();
+
+            info!("[INFO] I'm doing something with a task");
+            // TODO: Execute task.
+            // TODO: Send a task result with Completed or Failed status to writer.
+        }
+    }
+}
+
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
     let message = serde_json::to_value(&message).unwrap();
     if message.get("id").is_some() {
@@ -307,7 +334,7 @@ async fn handle_server_message(message: String, state: Arc<WorkerState>) {
             {
                 // This was a response to a fetch task.
                 let task_id = task.id;
-                state.task_list.write().await.insert(task_id, task);
+                state.task_list.write().await.push_back(task);
                 info!(
                     "[INFO] Got a 'fetch_task' response from server and queued task {} into worker queue",
                     task_id
