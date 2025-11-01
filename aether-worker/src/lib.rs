@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, atomic::AtomicUsize},
 };
 
+use base64::prelude::*;
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -318,10 +319,23 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
 }
 
 async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
-    // TODO: Extract info from task args. --> Maybe rethink the 'args' param.
-    // TODO: Decode script info from base64 to plain text and store file temporarily.
-    // TODO: Run 'uv run script.py' command, get the handle and await result.
-    // TODO: Based on handle result, write Completed or Failed status to broker.
+    if let Ok(code) = BASE64_STANDARD.decode(&task.code_b64) {
+        let code = String::from_utf8_lossy(&code);
+        // TODO: Run 'uv run script.py' command, get the handle and await result.
+        // TODO: Based on handle result, write Completed or Failed status to broker.
+    } else {
+        info!("[ERROR] Could not decode source code for task {}", task.id);
+        let response = TaskResult {
+            id: task.id,
+            name: task.name,
+            code_b64: task.code_b64,
+            result: None,
+            status: TaskStatus::Failed,
+        };
+        // TODO: Check these unwraps.
+        let response = serde_json::to_string(&response).unwrap();
+        writer_tx.send(response).await.unwrap();
+    }
 }
 
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
