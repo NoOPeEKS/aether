@@ -41,7 +41,7 @@ impl BrokerState {
             TaskResult {
                 id: task.id,
                 name: task.name,
-                args: task.args,
+                code_b64: task.code_b64,
                 result: None,
                 status: TaskStatus::Queued,
             },

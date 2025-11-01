@@ -7,7 +7,6 @@ use aether_broker::state::BrokerState;
 use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest};
 use serde_json::json;
 use tokio::net::TcpStream;
-use tracing_subscriber::fmt::format;
 
 use std::sync::Once;
 static INIT: Once = Once::new();
@@ -72,10 +71,11 @@ async fn test_register_worker() {
     let mut buf = String::new();
     _ = reader.read_line(&mut buf).await;
     _ = reader.read_line(&mut buf).await;
-    let mut buf: [u8; 82] = [0; 82];
+    let mut buf: [u8; 69] = [0; 69];
     _ = reader.read_exact(&mut buf).await;
 
-    println!("{}", String::from_utf8_lossy(&buf));
+    let resp_str = String::from_utf8_lossy(&buf);
+    assert!(resp_str.contains("registered"));
 }
 
 #[tokio::test]
@@ -108,7 +108,7 @@ async fn test_heartbeat() {
     let mut buf = String::new();
     _ = reader.read_line(&mut buf).await;
     _ = reader.read_line(&mut buf).await;
-    let mut buf: [u8; 82] = [0; 82];
+    let mut buf: [u8; 69] = [0; 69];
     _ = reader.read_exact(&mut buf).await;
 
     println!("{}", String::from_utf8_lossy(&buf));
@@ -124,4 +124,5 @@ async fn test_heartbeat() {
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_secs(3)).await;
+    println!("Should see a heartbeat notification received above.");
 }

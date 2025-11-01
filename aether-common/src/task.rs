@@ -5,14 +5,14 @@ use uuid::Uuid;
 pub struct Task {
     pub id: Uuid,
     pub name: String,
-    pub args: serde_json::Value,
+    pub code_b64: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskResult {
     pub id: Uuid,
     pub name: String,
-    pub args: serde_json::Value,
+    pub code_b64: String,
     pub result: Option<serde_json::Value>,
     pub status: TaskStatus,
 }

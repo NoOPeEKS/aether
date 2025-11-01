@@ -11,7 +11,7 @@ async fn test_create_task() {
     let state = BrokerState::new(10);
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
+    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(
@@ -64,7 +64,7 @@ async fn test_get_info_from_task() {
     let state = BrokerState::new(10);
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
+    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(
@@ -111,7 +111,7 @@ async fn test_get_all_tasks() {
     let state = BrokerState::new(10);
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "args": [1, 2, "hello"]});
+    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(

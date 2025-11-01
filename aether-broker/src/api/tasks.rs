@@ -10,7 +10,7 @@ use crate::state::BrokerState;
 #[derive(Serialize, Deserialize)]
 pub struct CreateTaskRequest {
     pub name: String,
-    pub args: serde_json::Value,
+    pub code_b64: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,7 +27,7 @@ pub async fn create_task_handler(
     let new_task = Task {
         id,
         name: task.name,
-        args: task.args,
+        code_b64: task.code_b64
     };
 
     // TODO: Handle non able to enqueue correctly.

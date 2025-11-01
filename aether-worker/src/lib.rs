@@ -293,26 +293,35 @@ async fn fetch_loop(
     }
 }
 
-async fn executor_loop(executor_tx: mpsc::Sender<String>, state: Arc<WorkerState>) {
+async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>) {
     info!("[INFO] Starting executor loop task");
     loop {
         if let Some(task) = state.task_list.write().await.pop_front() {
+            info!("[INFO] Running task {}", task.id);
             let updated_task_status = TaskResult {
                 id: task.id,
-                name: task.name,
-                args: task.args,
+                name: task.name.clone(),
+                code_b64: task.code_b64.clone(),
                 result: None,
                 status: TaskStatus::Running,
             };
             // TODO: Check these unwrap.
             let msg = serde_json::to_string(&updated_task_status).unwrap();
-            executor_tx.send(msg).await.unwrap();
+            writer_tx.send(msg).await.unwrap();
 
-            info!("[INFO] I'm doing something with a task");
+            tokio::spawn(execute_task(writer_tx.clone(), task));
+
             // TODO: Execute task.
             // TODO: Send a task result with Completed or Failed status to writer.
         }
     }
+}
+
+async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
+    // TODO: Extract info from task args. --> Maybe rethink the 'args' param.
+    // TODO: Decode script info from base64 to plain text and store file temporarily.
+    // TODO: Run 'uv run script.py' command, get the handle and await result.
+    // TODO: Based on handle result, write Completed or Failed status to broker.
 }
 
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
