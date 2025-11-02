@@ -16,7 +16,9 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
+use aether_common::jrpc::{
+    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, format_jrpc_message,
+};
 use aether_common::task::{Task, TaskResult, TaskStatus};
 
 static ID: AtomicUsize = AtomicUsize::new(1);
@@ -101,10 +103,8 @@ async fn register_worker(
             "worker_id": worker_id.to_string(),
         }),
     };
-    let body = serde_json::to_string(&register_worker_body)?;
-    writer
-        .write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes())
-        .await?;
+    let message = format_jrpc_message(register_worker_body)?;
+    writer.write_all(message.as_bytes()).await?;
 
     let mut line = String::new();
     reader.read_line(&mut line).await?;
@@ -143,8 +143,8 @@ async fn heartbeat_clock(heartbeat_tx: mpsc::Sender<String>, state: Arc<WorkerSt
                 "worker_id": state.id,
             }),
         };
-        let body = serde_json::to_string(&heartbeat_notif).unwrap();
-        let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+
+        let msg = format_jrpc_message(heartbeat_notif).unwrap();
 
         match heartbeat_tx.try_send(msg) {
             Ok(()) => {
@@ -271,12 +271,8 @@ async fn fetch_loop(
                     "worker_id": state.id,
                 }),
             };
-            let fetch_task_body = serde_json::to_string(&fetch_task_msg).unwrap();
-            let msg = format!(
-                "Content-Length: {}\r\n\r\n{}",
-                fetch_task_body.len(),
-                fetch_task_body
-            );
+
+            let msg = format_jrpc_message(fetch_task_msg).unwrap();
 
             match fetcher_tx.try_send(msg) {
                 Ok(()) => {
@@ -313,8 +309,7 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
                 method: "report_result".into(),
                 params: task_status,
             };
-            let msg = serde_json::to_string(&updated_result).unwrap();
-            let message = format!("Content-Length: {}\r\n\r\n{}", msg.len(), msg);
+            let message = format_jrpc_message(updated_result).unwrap();
             writer_tx.send(message).await.unwrap();
 
             tokio::spawn(execute_task(writer_tx.clone(), task));
@@ -333,7 +328,7 @@ async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
         // TODO: Based on handle result, write Completed or Failed status to broker.
     } else {
         info!("[ERROR] Could not decode source code for task {}", task.id);
-        let response = TaskResult {
+        let result = TaskResult {
             id: task.id,
             name: task.name,
             code_b64: task.code_b64,
@@ -341,9 +336,13 @@ async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
             status: TaskStatus::Failed,
         };
         // TODO: Check these unwraps.
-        // TODO: Send with jsonrpc headers!
-        let response = serde_json::to_string(&response).unwrap();
-        let response = format!("Content-Length: {}\r\n\r\n{}", response.len(), response);
+        let result_val = serde_json::to_value(&result).unwrap();
+        let response_not = JsonRpcNotification {
+            jsonrpc: "2.0".into(),
+            method: "report_result".into(),
+            params: result_val,
+        };
+        let response = format_jrpc_message(response_not).unwrap();
         writer_tx.send(response).await.unwrap();
     }
 }

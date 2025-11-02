@@ -164,7 +164,6 @@ async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
 ) -> anyhow::Result<Option<JsonRpcResponse>> {
-    info!("[WARNING] Something hit the process_jsonrpc_message");
     let message = String::from_utf8_lossy(message);
     let message: serde_json::Value = serde_json::from_str(&message)?;
     if message.get("id").is_some() {

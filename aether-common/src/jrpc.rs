@@ -2,10 +2,19 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
+pub fn format_jrpc_message<T: Serialize>(msg: T) -> anyhow::Result<String> {
+    let str_msg = serde_json::to_string(&msg)?;
+    Ok(format!(
+        "Content-Length: {}\r\n\r\n{}",
+        str_msg.len(),
+        str_msg
+    ))
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
-    pub id: String, // "workerX-id_here"
+    pub id: String,
     pub method: String,
     pub params: serde_json::Value,
 }
