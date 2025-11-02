@@ -18,4 +18,5 @@ base64 = "0.22"
 aether-common = { path = "../aether-common" }
 
 [dev-dependencies]
+reqwest = "0.12"
 aether-broker = { path = "../aether-broker" }

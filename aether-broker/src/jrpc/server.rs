@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -17,8 +16,7 @@ use crate::state::{BrokerState, WorkerInfo};
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
 
-pub async fn create_jrpc_server(state: BrokerState, port: usize) {
-    let state = Arc::new(state);
+pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap_or_else(|_| panic!("Could not bind JRPC server to 0.0.0.0:{port}"));

@@ -321,6 +321,7 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
 async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
     if let Ok(code) = BASE64_STANDARD.decode(&task.code_b64) {
         let code = String::from_utf8_lossy(&code);
+        println!("Executor received code: {code}");
         // TODO: Run 'uv run script.py' command, get the handle and await result.
         // TODO: Based on handle result, write Completed or Failed status to broker.
     } else {

@@ -3,9 +3,11 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::Service;
 
+use std::sync::Arc;
+
 #[tokio::test]
 async fn test_health_endpoint() {
-    let state = BrokerState::new(10);
+    let state = Arc::new(BrokerState::new(10));
     let mut app = build_router(state);
 
     let response = app

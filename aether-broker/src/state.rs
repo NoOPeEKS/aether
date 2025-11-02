@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use tokio::{
     sync::{Mutex, RwLock, mpsc},
@@ -15,12 +15,11 @@ pub struct WorkerInfo {
     pub active: bool,
 }
 
-#[derive(Clone)]
 pub struct BrokerState {
     pub queue_tx: mpsc::Sender<Task>,
-    pub queue_rx: Arc<Mutex<mpsc::Receiver<Task>>>,
-    pub tasks: Arc<RwLock<HashMap<Uuid, TaskResult>>>,
-    pub worker_registry: Arc<RwLock<HashMap<String, WorkerInfo>>>,
+    pub queue_rx: Mutex<mpsc::Receiver<Task>>,
+    pub tasks: RwLock<HashMap<Uuid, TaskResult>>,
+    pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
 }
 
 impl BrokerState {
@@ -28,9 +27,9 @@ impl BrokerState {
         let (tx, rx) = mpsc::channel::<Task>(buffer_size);
         Self {
             queue_tx: tx,
-            queue_rx: Arc::new(Mutex::new(rx)),
-            tasks: Arc::new(RwLock::new(HashMap::new())),
-            worker_registry: Arc::new(RwLock::new(HashMap::new())),
+            queue_rx: Mutex::new(rx),
+            tasks: RwLock::new(HashMap::new()),
+            worker_registry: RwLock::new(HashMap::new()),
         }
     }
 

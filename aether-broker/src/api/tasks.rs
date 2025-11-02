@@ -1,6 +1,7 @@
 use axum::extract::Path;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use aether_common::task::{Task, TaskResult, TaskStatus};
@@ -20,14 +21,14 @@ pub struct CreateTaskResponse {
 }
 
 pub async fn create_task_handler(
-    State(state): State<BrokerState>,
+    State(state): State<Arc<BrokerState>>,
     Json(task): Json<CreateTaskRequest>,
 ) -> (StatusCode, Json<CreateTaskResponse>) {
     let id = Uuid::new_v4();
     let new_task = Task {
         id,
         name: task.name,
-        code_b64: task.code_b64
+        code_b64: task.code_b64,
     };
 
     // TODO: Handle non able to enqueue correctly.
@@ -52,7 +53,7 @@ pub struct GetTaskResponse {
 }
 
 pub async fn get_task_handler(
-    State(state): State<BrokerState>,
+    State(state): State<Arc<BrokerState>>,
     Path(task_id): Path<Uuid>,
 ) -> (StatusCode, Json<GetTaskResponse>) {
     if let Some(task) = state.get_task(task_id).await {
@@ -104,7 +105,7 @@ pub struct GetAllTasksResponse {
 }
 
 pub async fn get_all_tasks_handler(
-    State(state): State<BrokerState>,
+    State(state): State<Arc<BrokerState>>,
 ) -> (StatusCode, Json<GetAllTasksResponse>) {
     if let Some(tasks) = state.get_all_tasks().await {
         (
