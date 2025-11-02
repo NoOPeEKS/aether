@@ -46,7 +46,7 @@ impl BrokerState {
             },
         );
         // TODO: Handle non able to send correctly.
-        _ = self.queue_tx.send(task_send.clone());
+        _ = self.queue_tx.send(task_send.clone()).await;
     }
 
     pub async fn dequeue_task(&self) -> Result<Task, tokio::sync::mpsc::error::TryRecvError> {
