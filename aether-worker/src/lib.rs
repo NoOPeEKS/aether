@@ -307,8 +307,15 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
                 status: TaskStatus::Running,
             };
             // TODO: Check these unwrap.
-            let msg = serde_json::to_string(&updated_task_status).unwrap();
-            writer_tx.send(msg).await.unwrap();
+            let task_status = serde_json::to_value(&updated_task_status).unwrap();
+            let updated_result = JsonRpcNotification {
+                jsonrpc: "2.0".into(),
+                method: "report_result".into(),
+                params: task_status,
+            };
+            let msg = serde_json::to_string(&updated_result).unwrap();
+            let message = format!("Content-Length: {}\r\n\r\n{}", msg.len(), msg);
+            writer_tx.send(message).await.unwrap();
 
             tokio::spawn(execute_task(writer_tx.clone(), task));
 
@@ -334,13 +341,15 @@ async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
             status: TaskStatus::Failed,
         };
         // TODO: Check these unwraps.
+        // TODO: Send with jsonrpc headers!
         let response = serde_json::to_string(&response).unwrap();
+        let response = format!("Content-Length: {}\r\n\r\n{}", response.len(), response);
         writer_tx.send(response).await.unwrap();
     }
 }
 
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
-    let message = serde_json::to_value(&message).unwrap();
+    let message: serde_json::Value = serde_json::from_str(&message).unwrap();
     if message.get("id").is_some() {
         // It was a response.
         let response: JsonRpcResponse = serde_json::from_value(message).unwrap();
