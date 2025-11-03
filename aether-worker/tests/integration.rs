@@ -16,10 +16,11 @@ async fn integration_test() {
     _ = client
         .post("http://localhost:8080/api/v1/tasks")
         .header("Content-Type", "application/json")
-        .body("{\"name\":\"sample-task\", \"code_b64\": \"dGhpcyBpcyBhIHNhbXBsZSBjb2RlCg==\"}")
+        // The base64 is from this code:
+        // for i in range(0, 5):
+        //     print(f"Valor i: {i}")
+        .body("{\"name\":\"sample-task\", \"code_b64\": \"Zm9yIGkgaW4gcmFuZ2UoMCwgNSk6CiAgICBwcmludChmIlZhbG9yIGk6IHtpfSIpCg==\"}")
         .send().await.unwrap();
-    // TODO: Check why it's correctly sent and created, but the worker can't seem to be able to
-    // fetch it.
     tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }

@@ -1,9 +1,11 @@
 use std::{
     collections::VecDeque,
+    process::Stdio,
     sync::{Arc, atomic::AtomicUsize},
 };
 
 use base64::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -11,6 +13,7 @@ use tokio::{
         TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
+    process::Command,
     sync::{RwLock, mpsc},
     time::Duration,
 };
@@ -39,6 +42,13 @@ impl WorkerState {
             task_list: RwLock::new(VecDeque::new()),
         }
     }
+}
+
+#[derive(Deserialize, Serialize)]
+struct PythonExecution {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
 }
 
 pub async fn run_app(
@@ -313,9 +323,6 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
             writer_tx.send(message).await.unwrap();
 
             tokio::spawn(execute_task(writer_tx.clone(), task));
-
-            // TODO: Execute task.
-            // TODO: Send a task result with Completed or Failed status to writer.
         }
     }
 }
@@ -323,9 +330,67 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
 async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
     if let Ok(code) = BASE64_STANDARD.decode(&task.code_b64) {
         let code = String::from_utf8_lossy(&code);
-        println!("Executor received code: {code}");
-        // TODO: Run 'uv run script.py' command, get the handle and await result.
-        // TODO: Based on handle result, write Completed or Failed status to broker.
+        match run_python_code(code.to_string()).await {
+            Ok(python_result) => {
+                // TODO: Check these unwraps.
+                let py_res_val = serde_json::to_value(&python_result).unwrap();
+                let task_result = if python_result.exit_code == 0 {
+                    info!(
+                        "[INFO] Successfully completed execution of task with id {}",
+                        task.id
+                    );
+                    TaskResult {
+                        id: task.id,
+                        name: task.name,
+                        code_b64: task.code_b64,
+                        result: Some(py_res_val),
+                        status: TaskStatus::Completed,
+                    }
+                } else {
+                    warn!(
+                        "[WARNING] Failed execution of task with id {} due to Python code error.",
+                        task.id
+                    );
+                    TaskResult {
+                        id: task.id,
+                        name: task.name,
+                        code_b64: task.code_b64,
+                        result: Some(py_res_val),
+                        status: TaskStatus::Failed,
+                    }
+                };
+                let task_result_val = serde_json::to_value(&task_result).unwrap();
+                let error_notification = JsonRpcNotification {
+                    jsonrpc: "2.0".into(),
+                    method: "report_result".into(),
+                    params: task_result_val,
+                };
+                let response = format_jrpc_message(error_notification).unwrap();
+                writer_tx.send(response).await.unwrap();
+            }
+            Err(_) => {
+                warn!(
+                    "[WARNING] Failed execution of task with id {} due to worker errors.",
+                    task.id
+                );
+                let result = TaskResult {
+                    id: task.id,
+                    name: task.name,
+                    code_b64: task.code_b64,
+                    result: None,
+                    status: TaskStatus::Failed,
+                };
+                // TODO: Check these unwraps.
+                let result_val = serde_json::to_value(&result).unwrap();
+                let error_notification = JsonRpcNotification {
+                    jsonrpc: "2.0".into(),
+                    method: "report_result".into(),
+                    params: result_val,
+                };
+                let response = format_jrpc_message(error_notification).unwrap();
+                writer_tx.send(response).await.unwrap();
+            }
+        }
     } else {
         info!("[ERROR] Could not decode source code for task {}", task.id);
         let result = TaskResult {
@@ -345,6 +410,27 @@ async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
         let response = format_jrpc_message(response_not).unwrap();
         writer_tx.send(response).await.unwrap();
     }
+}
+
+async fn run_python_code(code: String) -> anyhow::Result<PythonExecution> {
+    let mut child = Command::new("uv")
+        .arg("run")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdin = child
+        .stdin
+        .as_mut()
+        .ok_or(anyhow::anyhow!("Could not get stdin from uv process"))?;
+    stdin.write_all(code.as_bytes()).await?;
+    let output = child.wait_with_output().await?;
+    Ok(PythonExecution {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
 }
 
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
