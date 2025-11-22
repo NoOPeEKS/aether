@@ -257,7 +257,7 @@ async fn process_jsonrpc_message(
                 }));
             }
 
-            if let Ok(task) = state.dequeue_task().await {
+            if let Some(task) = state.dequeue_task(&req_params.worker_id).await {
                 info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
                 return Ok(Some(JsonRpcResponse {
                     jsonrpc: "2.0".into(),
@@ -305,11 +305,11 @@ async fn process_jsonrpc_message(
             }
         } else if &notification.method == "report_result"
             && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
-            && state.tasks.read().await.contains_key(&task_result.id)
+            && state.leases.read().await.contains_key(&task_result.id)
         {
             info!("[INFO] Result from task ID = {} received.", task_result.id);
             state
-                .tasks
+                .leases
                 .write()
                 .await
                 .insert(task_result.id, task_result);

@@ -21,7 +21,7 @@ fn init_tracing() {
 #[tokio::test]
 async fn test_parsing() {
     init_tracing();
-    let state = Arc::new(BrokerState::new(10));
+    let state = Arc::new(BrokerState::new());
     tokio::spawn(create_jrpc_server(state, 6969));
 
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -46,7 +46,7 @@ async fn test_parsing() {
 #[tokio::test]
 async fn test_register_worker() {
     init_tracing();
-    let state = Arc::new(BrokerState::new(10));
+    let state = Arc::new(BrokerState::new());
     tokio::spawn(create_jrpc_server(state, 7777));
 
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -82,7 +82,7 @@ async fn test_register_worker() {
 #[tokio::test]
 async fn test_heartbeat() {
     init_tracing();
-    let state = Arc::new(BrokerState::new(10));
+    let state = Arc::new(BrokerState::new());
     tokio::spawn(create_jrpc_server(state, 6666));
 
     tokio::time::sleep(Duration::from_secs(5)).await;
