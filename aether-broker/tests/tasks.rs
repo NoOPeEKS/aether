@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use aether_broker::api::tasks::{CreateTaskResponse, GetAllTasksResponse};
 use aether_broker::{BrokerState, build_router};
 use aether_common::task::TaskStatus;
@@ -8,7 +9,7 @@ use tower::Service;
 
 #[tokio::test]
 async fn test_create_task() {
-    let state = BrokerState::new(10);
+    let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
     let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
@@ -36,7 +37,7 @@ async fn test_create_task() {
 
 #[tokio::test]
 async fn test_get_non_existant_task() {
-    let state = BrokerState::new(10);
+    let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
     let response = app
@@ -61,7 +62,7 @@ async fn test_get_non_existant_task() {
 
 #[tokio::test]
 async fn test_get_info_from_task() {
-    let state = BrokerState::new(10);
+    let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
     let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
@@ -108,7 +109,7 @@ async fn test_get_info_from_task() {
 
 #[tokio::test]
 async fn test_get_all_tasks() {
-    let state = BrokerState::new(10);
+    let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
     let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});

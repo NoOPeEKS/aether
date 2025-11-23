@@ -1,12 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
-use tokio::{
-    sync::{Mutex, RwLock, mpsc},
-    time::Instant,
-};
+use tokio::{sync::RwLock, time::Instant};
 use uuid::Uuid;
 
-use aether_common::task::{Task, TaskResult, TaskStatus};
+use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
 
 #[derive(Clone, Debug)]
 pub struct WorkerInfo {
@@ -15,58 +12,117 @@ pub struct WorkerInfo {
     pub active: bool,
 }
 
+/// Represents a lease of a task to a worker to control who has tasks
+/// under execution and allow them to go back into the queue if finished.
+/// TODO: Implement timeout.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Lease {
+    worker_id: String,
+    task_id: Uuid,
+    attempts: usize,
+}
+
+#[derive(Default)]
 pub struct BrokerState {
-    pub queue_tx: mpsc::Sender<Task>,
-    pub queue_rx: Mutex<mpsc::Receiver<Task>>,
-    pub tasks: RwLock<HashMap<Uuid, TaskResult>>,
+    pub high_prio: RwLock<VecDeque<Task>>,
+    pub mid_prio: RwLock<VecDeque<Task>>,
+    pub low_prio: RwLock<VecDeque<Task>>,
+    pub results: RwLock<HashMap<Uuid, TaskResult>>,
+    pub leases: RwLock<HashSet<Lease>>,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
 }
 
 impl BrokerState {
-    pub fn new(buffer_size: usize) -> Self {
-        let (tx, rx) = mpsc::channel::<Task>(buffer_size);
+    pub fn new() -> Self {
         Self {
-            queue_tx: tx,
-            queue_rx: Mutex::new(rx),
-            tasks: RwLock::new(HashMap::new()),
-            worker_registry: RwLock::new(HashMap::new()),
+            ..Default::default()
         }
     }
 
     pub async fn enqueue_task(&self, task: Task) {
-        let task_send = task.clone();
-        self.tasks.write().await.insert(
-            task.id,
-            TaskResult {
-                id: task.id,
-                name: task.name,
-                code_b64: task.code_b64,
-                result: None,
-                status: TaskStatus::Queued,
-            },
-        );
-        // TODO: Handle non able to send correctly.
-        _ = self.queue_tx.send(task_send.clone()).await;
+        match task.priority {
+            TaskPriority::High => {
+                self.high_prio.write().await.push_back(task);
+            }
+            TaskPriority::Medium => {
+                self.mid_prio.write().await.push_back(task);
+            }
+            TaskPriority::Low => {
+                self.low_prio.write().await.push_back(task);
+            }
+        };
     }
 
-    pub async fn dequeue_task(&self) -> Result<Task, tokio::sync::mpsc::error::TryRecvError> {
-        let mut rx = self.queue_rx.lock().await;
-        rx.try_recv()
+    pub async fn dequeue_task(&self, worker_id: &str) -> Option<Task> {
+        if let Some(task) = self.high_prio.write().await.pop_front() {
+            self.results.write().await.insert(
+                task.id,
+                TaskResult {
+                    id: task.id,
+                    name: task.name.clone(),
+                    code_b64: task.code_b64.clone(),
+                    result: None,
+                    status: TaskStatus::Running,
+                },
+            );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
+            Some(task)
+        } else if let Some(task) = self.mid_prio.write().await.pop_front() {
+            self.results.write().await.insert(
+                task.id,
+                TaskResult {
+                    id: task.id,
+                    name: task.name.clone(),
+                    code_b64: task.code_b64.clone(),
+                    result: None,
+                    status: TaskStatus::Running,
+                },
+            );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
+            Some(task)
+        } else if let Some(task) = self.low_prio.write().await.pop_front() {
+            self.results.write().await.insert(
+                task.id,
+                TaskResult {
+                    id: task.id,
+                    name: task.name.clone(),
+                    code_b64: task.code_b64.clone(),
+                    result: None,
+                    status: TaskStatus::Running,
+                },
+            );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
+            Some(task)
+        } else {
+            None
+        }
     }
 
     pub async fn update_result(&self, id: Uuid, result: serde_json::Value) {
-        if let Some(t) = self.tasks.write().await.get_mut(&id) {
+        if let Some(t) = self.results.write().await.get_mut(&id) {
             t.status = TaskStatus::Completed;
             t.result = Some(result);
         }
     }
 
     pub async fn get_task(&self, id: Uuid) -> Option<TaskResult> {
-        self.tasks.read().await.get(&id).cloned()
+        self.results.read().await.get(&id).cloned()
     }
 
     pub async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
-        let tasks: Vec<TaskResult> = self.tasks.read().await.values().cloned().collect();
+        let tasks: Vec<TaskResult> = self.results.read().await.values().cloned().collect();
         if tasks.is_empty() { None } else { Some(tasks) }
     }
 }

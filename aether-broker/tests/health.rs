@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let state = Arc::new(BrokerState::new(10));
+    let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
     let response = app

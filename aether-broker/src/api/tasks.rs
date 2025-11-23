@@ -1,10 +1,11 @@
 use axum::extract::Path;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use aether_common::task::{Task, TaskResult, TaskStatus};
+use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
 
 use crate::state::BrokerState;
 
@@ -12,6 +13,7 @@ use crate::state::BrokerState;
 pub struct CreateTaskRequest {
     pub name: String,
     pub code_b64: String,
+    pub priority: TaskPriority
 }
 
 #[derive(Serialize, Deserialize)]
@@ -24,11 +26,13 @@ pub async fn create_task_handler(
     State(state): State<Arc<BrokerState>>,
     Json(task): Json<CreateTaskRequest>,
 ) -> (StatusCode, Json<CreateTaskResponse>) {
+    info!("[INFO] A task has been requested at the POST /tasks");
     let id = Uuid::new_v4();
     let new_task = Task {
         id,
         name: task.name,
         code_b64: task.code_b64,
+        priority: task.priority,
     };
 
     // TODO: Handle non able to enqueue correctly.

@@ -6,6 +6,15 @@ pub struct Task {
     pub id: Uuid,
     pub name: String,
     pub code_b64: String,
+    pub priority: TaskPriority,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskPriority {
+    High,
+    Medium,
+    Low,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
