@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use tokio::{sync::RwLock, time::Instant};
 use uuid::Uuid;
@@ -12,14 +12,23 @@ pub struct WorkerInfo {
     pub active: bool,
 }
 
-pub struct Lease {}
+/// Represents a lease of a task to a worker to control who has tasks
+/// under execution and allow them to go back into the queue if finished.
+/// TODO: Implement timeout.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Lease {
+    worker_id: String,
+    task_id: Uuid,
+    attempts: usize,
+}
 
 #[derive(Default)]
 pub struct BrokerState {
     pub high_prio: RwLock<VecDeque<Task>>,
     pub mid_prio: RwLock<VecDeque<Task>>,
     pub low_prio: RwLock<VecDeque<Task>>,
-    pub leases: RwLock<HashMap<Uuid, TaskResult>>,
+    pub results: RwLock<HashMap<Uuid, TaskResult>>,
+    pub leases: RwLock<HashSet<Lease>>,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
 }
 
@@ -46,7 +55,7 @@ impl BrokerState {
 
     pub async fn dequeue_task(&self, worker_id: &str) -> Option<Task> {
         if let Some(task) = self.high_prio.write().await.pop_front() {
-            self.leases.write().await.insert(
+            self.results.write().await.insert(
                 task.id,
                 TaskResult {
                     id: task.id,
@@ -56,9 +65,14 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
             Some(task)
         } else if let Some(task) = self.mid_prio.write().await.pop_front() {
-            self.leases.write().await.insert(
+            self.results.write().await.insert(
                 task.id,
                 TaskResult {
                     id: task.id,
@@ -68,9 +82,14 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
             Some(task)
         } else if let Some(task) = self.low_prio.write().await.pop_front() {
-            self.leases.write().await.insert(
+            self.results.write().await.insert(
                 task.id,
                 TaskResult {
                     id: task.id,
@@ -80,6 +99,11 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
+            self.leases.write().await.insert(Lease {
+                worker_id: worker_id.into(),
+                task_id: task.id,
+                attempts: 1,
+            });
             Some(task)
         } else {
             None
@@ -87,18 +111,18 @@ impl BrokerState {
     }
 
     pub async fn update_result(&self, id: Uuid, result: serde_json::Value) {
-        if let Some(t) = self.leases.write().await.get_mut(&id) {
+        if let Some(t) = self.results.write().await.get_mut(&id) {
             t.status = TaskStatus::Completed;
             t.result = Some(result);
         }
     }
 
     pub async fn get_task(&self, id: Uuid) -> Option<TaskResult> {
-        self.leases.read().await.get(&id).cloned()
+        self.results.read().await.get(&id).cloned()
     }
 
     pub async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
-        let tasks: Vec<TaskResult> = self.leases.read().await.values().cloned().collect();
+        let tasks: Vec<TaskResult> = self.results.read().await.values().cloned().collect();
         if tasks.is_empty() { None } else { Some(tasks) }
     }
 }

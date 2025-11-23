@@ -305,11 +305,11 @@ async fn process_jsonrpc_message(
             }
         } else if &notification.method == "report_result"
             && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
-            && state.leases.read().await.contains_key(&task_result.id)
+            && state.results.read().await.contains_key(&task_result.id)
         {
             info!("[INFO] Result from task ID = {} received.", task_result.id);
             state
-                .leases
+                .results
                 .write()
                 .await
                 .insert(task_result.id, task_result);
