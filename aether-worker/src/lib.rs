@@ -1,6 +1,6 @@
 use std::{
-    collections::VecDeque,
-    process::Stdio,
+    collections::{HashMap, VecDeque},
+    process::{ExitStatus, Stdio},
     sync::{Arc, atomic::AtomicUsize},
 };
 
@@ -14,10 +14,12 @@ use tokio::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     process::Command,
-    sync::{RwLock, mpsc},
+    sync::{RwLock, mpsc, oneshot},
+    task::JoinHandle,
     time::Duration,
 };
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use aether_common::jrpc::{
     JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, format_jrpc_message,
@@ -33,6 +35,7 @@ fn next_id() -> usize {
 struct WorkerState {
     id: String,
     task_list: RwLock<VecDeque<Task>>,
+    running_tasks: RwLock<HashMap<Uuid, RunningTask>>,
 }
 
 impl WorkerState {
@@ -40,8 +43,14 @@ impl WorkerState {
         Self {
             id: id.to_string(),
             task_list: RwLock::new(VecDeque::new()),
+            running_tasks: RwLock::new(HashMap::new()),
         }
     }
+}
+
+struct RunningTask {
+    handle: JoinHandle<()>,
+    cancel_tx: oneshot::Sender<()>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -322,115 +331,206 @@ async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>)
             let message = format_jrpc_message(updated_result).unwrap();
             writer_tx.send(message).await.unwrap();
 
-            tokio::spawn(execute_task(writer_tx.clone(), task));
+            let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+            let state_clone = Arc::clone(&state);
+
+            let task_id = &task.id.clone();
+            let handle = tokio::spawn(execute_task_select(
+                writer_tx.clone(),
+                state_clone,
+                task,
+                cancel_rx,
+            ));
+            state
+                .running_tasks
+                .write()
+                .await
+                .insert(*task_id, RunningTask { handle, cancel_tx });
         }
     }
 }
 
-async fn execute_task(writer_tx: mpsc::Sender<String>, task: Task) {
-    if let Ok(code) = BASE64_STANDARD.decode(&task.code_b64) {
-        let code = String::from_utf8_lossy(&code);
-        match run_python_code(code.to_string()).await {
-            Ok(python_result) => {
-                // TODO: Check these unwraps.
+async fn execute_task_select(
+    writer_tx: mpsc::Sender<String>,
+    state: Arc<WorkerState>,
+    task: Task,
+    mut cancel_rx: oneshot::Receiver<()>,
+) {
+    let code = match BASE64_STANDARD.decode(&task.code_b64) {
+        Ok(c) => String::from_utf8_lossy(&c).to_string(),
+        Err(_) => {
+            let task_result = TaskResult {
+                id: task.id,
+                name: task.name.clone(),
+                code_b64: task.code_b64.clone(),
+                result: None,
+                status: TaskStatus::Failed,
+            };
+            send_result_notification(&writer_tx, task_result).await;
+            state.running_tasks.write().await.remove(&task.id);
+            return;
+        }
+    };
+
+    loop {
+        let res = run_python_or_cancel(code.clone(), &mut cancel_rx).await;
+
+        match res {
+            // Ok(Some(status, stdout, stderr)) means successful execution.
+            Ok(Some((status, stdout_buf, stderr_buf))) => {
+                let exit_code = status.code().unwrap_or(-1);
+
+                let python_result = PythonExecution {
+                    exit_code,
+                    stdout: String::from_utf8_lossy(&stdout_buf).to_string(),
+                    stderr: String::from_utf8_lossy(&stderr_buf).to_string(),
+                };
                 let py_res_val = serde_json::to_value(&python_result).unwrap();
-                let task_result = if python_result.exit_code == 0 {
-                    info!(
-                        "[INFO] Successfully completed execution of task with id {}",
-                        task.id
-                    );
-                    TaskResult {
+
+                if status.success() {
+                    let task_result = TaskResult {
                         id: task.id,
-                        name: task.name,
-                        code_b64: task.code_b64,
+                        name: task.name.clone(),
+                        code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
                         status: TaskStatus::Completed,
-                    }
+                    };
+                    send_result_notification(&writer_tx, task_result).await;
+                    state.running_tasks.write().await.remove(&task.id);
+                    info!("[INFO] Task {} completed with successful exit code.", &task.id);
+                    break;
                 } else {
-                    warn!(
-                        "[WARNING] Failed execution of task with id {} due to Python code error.",
-                        task.id
+                    info!(
+                        "[INFO] Task {} failed (exit {}). Retrying...",
+                        task.id, exit_code
                     );
-                    TaskResult {
+
+                    let task_result = TaskResult {
                         id: task.id,
-                        name: task.name,
-                        code_b64: task.code_b64,
+                        name: task.name.clone(),
+                        code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
                         status: TaskStatus::Failed,
+                    };
+                    send_result_notification(&writer_tx, task_result).await;
+
+                    // In between retries, wait a second and check if cancel signal has been
+                    // received.
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                            continue; // Retry loop
+                        }
+                        _ = &mut cancel_rx => {
+                            // Cancelled while sleeping
+                            handle_cancellation(&writer_tx, &state, &task).await;
+                            break;
+                        }
                     }
-                };
-                let task_result_val = serde_json::to_value(&task_result).unwrap();
-                let error_notification = JsonRpcNotification {
-                    jsonrpc: "2.0".into(),
-                    method: "report_result".into(),
-                    params: task_result_val,
-                };
-                let response = format_jrpc_message(error_notification).unwrap();
-                writer_tx.send(response).await.unwrap();
+                }
             }
+            // Ok(None) means cancellation got here, so we just break out of the loop.
+            Ok(None) => {
+                handle_cancellation(&writer_tx, &state, &task).await;
+                break;
+            }
+            // Err(_) means some error happened even before the execution, so we just try
+            // again.
             Err(_) => {
-                warn!(
-                    "[WARNING] Failed execution of task with id {} due to worker errors.",
-                    task.id
-                );
-                let result = TaskResult {
-                    id: task.id,
-                    name: task.name,
-                    code_b64: task.code_b64,
-                    result: None,
-                    status: TaskStatus::Failed,
-                };
-                // TODO: Check these unwraps.
-                let result_val = serde_json::to_value(&result).unwrap();
-                let error_notification = JsonRpcNotification {
-                    jsonrpc: "2.0".into(),
-                    method: "report_result".into(),
-                    params: result_val,
-                };
-                let response = format_jrpc_message(error_notification).unwrap();
-                writer_tx.send(response).await.unwrap();
+                continue;
             }
         }
-    } else {
-        info!("[ERROR] Could not decode source code for task {}", task.id);
-        let result = TaskResult {
-            id: task.id,
-            name: task.name,
-            code_b64: task.code_b64,
-            result: None,
-            status: TaskStatus::Failed,
-        };
-        // TODO: Check these unwraps.
-        let result_val = serde_json::to_value(&result).unwrap();
-        let response_not = JsonRpcNotification {
-            jsonrpc: "2.0".into(),
-            method: "report_result".into(),
-            params: result_val,
-        };
-        let response = format_jrpc_message(response_not).unwrap();
-        writer_tx.send(response).await.unwrap();
     }
 }
 
-async fn run_python_code(code: String) -> anyhow::Result<PythonExecution> {
-    let mut child = Command::new("uv")
+/// Returns Ok(Some((exit_status, stdout, stderr))) if successful, Ok(None) if cancelled, and Err(_) if failed and needs
+/// to retry.
+async fn run_python_or_cancel(
+    code: String,
+    cancel_rx: &mut oneshot::Receiver<()>,
+) -> anyhow::Result<Option<(ExitStatus, Vec<u8>, Vec<u8>)>> {
+    let mut child = match Command::new("uv")
         .arg("run")
         .arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
-    let stdin = child
-        .stdin
-        .as_mut()
-        .ok_or(anyhow::anyhow!("Could not get stdin from uv process"))?;
-    stdin.write_all(code.as_bytes()).await?;
-    let output = child.wait_with_output().await?;
-    Ok(PythonExecution {
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-    })
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => anyhow::bail!("Could not create child process."),
+    };
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        if (stdin.write_all(code.as_bytes()).await).is_err() {
+            anyhow::bail!("Could not write code to UV stdin.");
+        }
+        // Drop stdin to let know its EOF.
+        drop(child.stdin.take());
+    }
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    if stdout.is_none() || stderr.is_none() {
+        anyhow::bail!("Could not take stdout or stderr from uv process.");
+    }
+
+    // SAFETY: We literally checked before and bail out if they are none.
+    let mut stdout = stdout.unwrap();
+    let mut stderr = stderr.unwrap();
+
+    tokio::select! {
+        status_res = child.wait() => {
+            match status_res {
+                Ok(status) => {
+                    let mut stdout_buf = Vec::new();
+                    let mut stderr_buf = Vec::new();
+                    // Read output after wait (Note: for large output, read concurrently to avoid deadlocks)
+                    let _ = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut stdout_buf).await;
+                    let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut stderr_buf).await;
+                    Ok(Some((status, stdout_buf, stderr_buf)))
+                }
+                Err(_) => anyhow::bail!("An error happened when waiting the process"),
+            }
+        }
+        _ = cancel_rx => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            Ok(None) // Ok(None) because cancellation got in before.
+        }
+    }
+}
+
+async fn send_result_notification(writer_tx: &mpsc::Sender<String>, result: TaskResult) {
+    let val = serde_json::to_value(result).unwrap();
+    let notification = JsonRpcNotification {
+        jsonrpc: "2.0".into(),
+        method: "report_result".into(),
+        params: val,
+    };
+    let msg = format_jrpc_message(notification).unwrap();
+    let _ = writer_tx.send(msg).await;
+}
+
+async fn handle_cancellation(
+    writer_tx: &mpsc::Sender<String>,
+    state: &Arc<WorkerState>,
+    task: &Task,
+) {
+    warn!("[WARNING] Task {} has been cancelled due to too many attempts.", task.id);
+    state.running_tasks.write().await.remove(&task.id);
+    let task_result = TaskResult {
+        id: task.id,
+        name: task.name.clone(),
+        code_b64: task.code_b64.clone(),
+        result: None,
+        status: TaskStatus::Cancelled,
+    };
+    send_result_notification(writer_tx, task_result).await;
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct StopExecutionNotificationParams {
+    task_id: Uuid,
 }
 
 async fn handle_server_message(message: String, state: Arc<WorkerState>) {
@@ -461,7 +561,25 @@ async fn handle_server_message(message: String, state: Arc<WorkerState>) {
         }
     } else {
         // It was a notification.
-        // We will do nothing as of now because we just haven't programmed any broker-->worker
-        // notification.
+        // TODO: Check these unwraps.
+        let notification: JsonRpcNotification = serde_json::from_value(message).unwrap();
+
+        // TODO: Implement task cancellation flow with a channel.
+        if &notification.method == "stop_execution" {
+            let params: StopExecutionNotificationParams =
+                serde_json::from_value(notification.params).unwrap();
+            if let Some(running) = state.running_tasks.write().await.remove(&params.task_id) {
+                _ = running.cancel_tx.send(());
+                tokio::spawn(async move {
+                    _ = running.handle.await;
+                    info!("[INFO] Cancelled task {}", &params.task_id);
+                });
+            } else {
+                warn!(
+                    "[WARNING] stop_execution: task {} not found",
+                    &params.task_id
+                );
+            }
+        }
     }
 }

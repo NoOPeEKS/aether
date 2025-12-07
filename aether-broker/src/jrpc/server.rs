@@ -4,17 +4,21 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
+use uuid::Uuid;
 
 use aether_common::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    format_jrpc_message,
 };
-use aether_common::task::{Task, TaskResult};
+use aether_common::task::{Task, TaskResult, TaskStatus};
 
-use crate::state::{BrokerState, WorkerInfo};
+use crate::state::{BrokerState, WorkerInfo, WorkerSession};
 
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+const MAX_ATTEMPTS: usize = 5;
 
 pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
@@ -114,12 +118,19 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
             match reader.read_exact(&mut message_body).await {
                 Ok(_) => {
                     let state_clone = Arc::clone(&state);
-                    let response_tx_clone = response_tx.clone();
+                    let response_tx_clone1 = response_tx.clone();
+                    let response_tx_clone2 = response_tx.clone();
 
                     // Spawn a task to process the response in the background and let the thread
                     // continue iteration to keep reading messages!!!
                     tokio::spawn(async move {
-                        match process_jsonrpc_message(&message_body, &state_clone).await {
+                        match process_jsonrpc_message(
+                            &message_body,
+                            &state_clone,
+                            response_tx_clone1,
+                        )
+                        .await
+                        {
                             Ok(Some(response)) => {
                                 // Message was a request, need to send a response
                                 match serde_json::to_string(&response) {
@@ -130,7 +141,7 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
                                             res_str
                                         );
                                         // Send the response string via the channel to the writer task
-                                        if let Err(e) = response_tx_clone.send(response_bytes) {
+                                        if let Err(e) = response_tx_clone2.send(response_bytes) {
                                             error!(
                                                 "[ERROR] Failed to send response to writer task: {e}. Client connection likely closed."
                                             );
@@ -163,6 +174,7 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
 async fn process_jsonrpc_message(
     message: &[u8],
     state: &BrokerState,
+    worker_sender: UnboundedSender<String>,
 ) -> anyhow::Result<Option<JsonRpcResponse>> {
     let message = String::from_utf8_lossy(message);
     let message: serde_json::Value = serde_json::from_str(&message)?;
@@ -185,9 +197,16 @@ async fn process_jsonrpc_message(
                 state.worker_registry.write().await.insert(
                     register_req.worker_id.clone(),
                     WorkerInfo {
-                        worker_id: register_req.worker_id,
+                        worker_id: register_req.worker_id.clone(),
                         last_heartbeat: tokio::time::Instant::now(),
                         active: true,
+                    },
+                );
+                state.worker_sessions.write().await.insert(
+                    register_req.worker_id,
+                    WorkerSession {
+                        sender: worker_sender,
+                        closed: false,
                     },
                 );
                 return Ok(Some(JsonRpcResponse {
@@ -312,10 +331,47 @@ async fn process_jsonrpc_message(
                 .results
                 .write()
                 .await
-                .insert(task_result.id, task_result);
+                .insert(task_result.id, task_result.clone());
+            if task_result.status == TaskStatus::Completed {
+                state.leases.write().await.remove(&task_result.id).unwrap();
+            } else if task_result.status == TaskStatus::Failed {
+                let mut leases = state.leases.write().await;
+                // TODO: Check this unwrap.
+                let lease = leases.get_mut(&task_result.id).unwrap();
+                state
+                    .results
+                    .write()
+                    .await
+                    .get_mut(&task_result.id)
+                    .unwrap()
+                    .status = TaskStatus::Failed;
+                lease.attempts += 1;
+
+                if lease.attempts >= MAX_ATTEMPTS
+                    && let Some(_) = state.worker_registry.read().await.get(&lease.worker_id)
+                    && let Some(session) = state.worker_sessions.read().await.get(&lease.worker_id)
+                {
+                    let notif = JsonRpcNotification {
+                        jsonrpc: "2.0".into(),
+                        method: "stop_execution".into(),
+                        params: serde_json::to_value(StopExecutionNotificationParams {
+                            task_id: task_result.id,
+                        })?,
+                    };
+                    // TODO: Handle this better.
+                    session.sender.send(format_jrpc_message(notif)?)?;
+                }
+            } else if task_result.status == TaskStatus::Cancelled {
+                state.leases.write().await.remove(&task_result.id).unwrap();
+            }
         }
     }
     Ok(None)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct StopExecutionNotificationParams {
+    task_id: Uuid,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -91,6 +91,13 @@ pub async fn get_task_handler(
                     error: Some("An error occured parsing inputs.".to_string()),
                 }),
             ),
+            TaskStatus::Cancelled => (
+                StatusCode::OK,
+                Json(GetTaskResponse {
+                    task: Some(task),
+                    error: Some("This task got cancelled due too many attempts".to_string()),
+                }),
+            ),
         }
     } else {
         (
