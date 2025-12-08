@@ -4,14 +4,13 @@ use aether_common::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     format_jrpc_message,
 };
-use aether_common::task::{Task, TaskResult, TaskStatus};
-use serde::{Deserialize, Serialize};
+use aether_common::task::{TaskResult, TaskStatus};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
-use uuid::Uuid;
 
+use crate::jrpc::params::*;
 use crate::state::{BrokerState, WorkerInfo, WorkerSession};
 
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
@@ -365,34 +364,4 @@ async fn process_jsonrpc_message(
         }
     }
     Ok(None)
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct StopExecutionNotificationParams {
-    task_id: Uuid,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RegisterWorkerRequestParams {
-    worker_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RegisterWorkerResponseParams {
-    status: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FetchTaskRequestParams {
-    worker_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FetchTaskResponseResult {
-    task: Option<Task>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct HeartbeatNotificationParams {
-    worker_id: String,
 }
