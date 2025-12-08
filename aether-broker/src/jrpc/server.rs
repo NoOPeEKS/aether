@@ -9,7 +9,6 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::jrpc::params::*;
 use crate::state::{BrokerState, WorkerInfo, WorkerSession};
@@ -79,7 +78,7 @@ async fn handle_timeouts(state: Arc<BrokerState>) {
                 };
                 let worker_id = &lease.worker_id;
                 if let Some(wsession) = state.worker_sessions.read().await.get(worker_id) {
-                    // TODO: Check this unwrap.
+                    // TODO: Check this unwraps.
                     wsession
                         .sender
                         .send(format_jrpc_message(notif).unwrap())
