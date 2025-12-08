@@ -8,7 +8,7 @@ use aether_common::task::{TaskResult, TaskStatus};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::jrpc::params::*;
 use crate::state::{BrokerState, WorkerInfo, WorkerSession};
@@ -16,6 +16,7 @@ use crate::state::{BrokerState, WorkerInfo, WorkerSession};
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
 const MAX_ATTEMPTS: usize = 5;
+const MAX_EXECUTION_TIME: tokio::time::Duration = tokio::time::Duration::from_secs(30);
 
 pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
@@ -24,19 +25,10 @@ pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
 
     // Spawn a task that checks for heartbeats and updates worker states.
     let heartbeat_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(CHECK_INTERVAL);
-        loop {
-            interval.tick().await;
-            let now = tokio::time::Instant::now();
-            let mut workers = heartbeat_state.worker_registry.write().await;
-            for (_, winfo) in workers.iter_mut() {
-                if now.duration_since(winfo.last_heartbeat) > HEARTBEAT_TIMEOUT {
-                    winfo.active = false;
-                }
-            }
-        }
-    });
+    tokio::spawn(handle_heartbeats(heartbeat_state));
+
+    let timeouts_state = Arc::clone(&state);
+    tokio::spawn(handle_timeouts(timeouts_state));
 
     loop {
         if let Ok((stream, addr)) = listener.accept().await {
@@ -45,6 +37,54 @@ pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
             tokio::spawn(handle_jrpc_connection(stream, state));
         } else {
             info!("[INFO] Could not accept an incoming connection");
+        }
+    }
+}
+
+async fn handle_heartbeats(state: Arc<BrokerState>) {
+    let mut interval = tokio::time::interval(CHECK_INTERVAL);
+    loop {
+        interval.tick().await;
+        let now = tokio::time::Instant::now();
+        let mut workers = state.worker_registry.write().await;
+        for (_, winfo) in workers.iter_mut() {
+            if now.duration_since(winfo.last_heartbeat) > HEARTBEAT_TIMEOUT {
+                winfo.active = false;
+            }
+        }
+    }
+}
+
+async fn handle_timeouts(state: Arc<BrokerState>) {
+    let mut interval = tokio::time::interval(CHECK_INTERVAL);
+    loop {
+        interval.tick().await;
+        let now = tokio::time::Instant::now();
+        let mut leases = state.leases.write().await;
+        for (task_id, lease) in leases.iter_mut() {
+            if now.duration_since(lease.start_time) > MAX_EXECUTION_TIME {
+                warn!(
+                    "[WARNING] Task {} exceeded maximum execution time. Cancelling...",
+                    task_id
+                );
+                // TODO: Check this unwrap, though it should never fail.
+                let notif = JsonRpcNotification {
+                    jsonrpc: "2.0".into(),
+                    method: "stop_execution".into(),
+                    params: serde_json::to_value(StopExecutionNotificationParams {
+                        task_id: *task_id,
+                    })
+                    .unwrap(),
+                };
+                let worker_id = &lease.worker_id;
+                if let Some(wsession) = state.worker_sessions.read().await.get(worker_id) {
+                    // TODO: Check this unwraps.
+                    wsession
+                        .sender
+                        .send(format_jrpc_message(notif).unwrap())
+                        .unwrap();
+                }
+            }
         }
     }
 }

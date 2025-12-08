@@ -12,7 +12,7 @@ pub struct WorkerInfo {
     pub active: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WorkerSession {
     pub sender: tokio::sync::mpsc::UnboundedSender<String>,
     pub closed: bool,
@@ -20,14 +20,14 @@ pub struct WorkerSession {
 
 /// Represents a lease of a task to a worker to control who has tasks
 /// under execution and allow them to go back into the queue if finished.
-/// TODO: Implement timeout.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Lease {
     pub worker_id: String,
     pub attempts: usize,
+    pub start_time: Instant,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct BrokerState {
     pub high_prio: RwLock<VecDeque<Task>>,
     pub mid_prio: RwLock<VecDeque<Task>>,
@@ -76,6 +76,7 @@ impl BrokerState {
                 Lease {
                     worker_id: worker_id.into(),
                     attempts: 1,
+                    start_time: Instant::now(),
                 },
             );
             Some(task)
@@ -95,6 +96,7 @@ impl BrokerState {
                 Lease {
                     worker_id: worker_id.into(),
                     attempts: 1,
+                    start_time: Instant::now(),
                 },
             );
             Some(task)
@@ -114,6 +116,7 @@ impl BrokerState {
                 Lease {
                     worker_id: worker_id.into(),
                     attempts: 1,
+                    start_time: Instant::now(),
                 },
             );
             Some(task)

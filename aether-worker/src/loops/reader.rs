@@ -103,7 +103,7 @@ async fn handle_server_message(message: String, state: Arc<WorkerState>) {
                 _ = running.cancel_tx.send(());
                 tokio::spawn(async move {
                     _ = running.handle.await;
-                    info!("[INFO] Cancelled task {}", &params.task_id);
+                    warn!("[WARNING] Cancelled task {}", &params.task_id);
                 });
             } else {
                 warn!(
