@@ -33,5 +33,5 @@ pub enum TaskStatus {
     Running,
     Completed,
     Failed,
-    Cancelled
+    Cancelled,
 }
