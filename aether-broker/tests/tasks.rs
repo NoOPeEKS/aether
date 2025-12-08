@@ -13,7 +13,7 @@ async fn test_create_task() {
     let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
+    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(
@@ -66,7 +66,7 @@ async fn test_get_info_from_task() {
     let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
+    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(
@@ -104,7 +104,7 @@ async fn test_get_info_from_task() {
         .unwrap();
     let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
 
-    assert!(get_body_string.contains(r#""name":"task1""#));
+    assert!(get_body_string.contains(r#""name":"sample-task""#));
     assert!(get_body_string.contains(r#""status":"queued""#));
 }
 
@@ -113,7 +113,7 @@ async fn test_get_all_tasks() {
     let state = Arc::new(BrokerState::new());
     let mut app = build_router(state);
 
-    let payload = json!({"name": "task1", "code_b64": "somebase64encodedstring"});
+    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
     let body = Body::from(serde_json::to_vec(&payload).unwrap());
     let response = app
         .call(
