@@ -1,9 +1,9 @@
+use std::sync::Arc;
+
 use aether_broker::{BrokerState, build_router};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::Service;
-
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_health_endpoint() {

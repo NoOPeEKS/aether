@@ -1,11 +1,12 @@
-use axum::extract::Path;
-use axum::{Json, extract::State, http::StatusCode};
-use serde::{Deserialize, Serialize};
-use tracing::info;
 use std::sync::Arc;
-use uuid::Uuid;
 
 use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use serde::{Deserialize, Serialize};
+use tracing::info;
+use uuid::Uuid;
 
 use crate::state::BrokerState;
 
@@ -13,7 +14,7 @@ use crate::state::BrokerState;
 pub struct CreateTaskRequest {
     pub name: String,
     pub code_b64: String,
-    pub priority: TaskPriority
+    pub priority: TaskPriority,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -89,6 +90,13 @@ pub async fn get_task_handler(
                 Json(GetTaskResponse {
                     task: Some(task),
                     error: Some("An error occured parsing inputs.".to_string()),
+                }),
+            ),
+            TaskStatus::Cancelled => (
+                StatusCode::OK,
+                Json(GetTaskResponse {
+                    task: Some(task),
+                    error: Some("This task got cancelled due too many attempts".to_string()),
                 }),
             ),
         }

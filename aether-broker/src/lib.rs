@@ -2,12 +2,12 @@ pub mod api;
 pub mod jrpc;
 pub mod state;
 
-use jrpc::server::create_jrpc_server;
 use std::sync::Arc;
-use tokio::net::TcpListener;
 
 pub use api::build_router;
+use jrpc::server::create_jrpc_server;
 pub use state::BrokerState;
+use tokio::net::TcpListener;
 
 pub async fn run_app(http_server_port: usize, rpc_server_port: usize) -> anyhow::Result<()> {
     let state = Arc::new(BrokerState::new());

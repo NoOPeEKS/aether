@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-
-use tokio::{sync::RwLock, time::Instant};
-use uuid::Uuid;
+use std::collections::{HashMap, VecDeque};
 
 use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use tokio::sync::RwLock;
+use tokio::time::Instant;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct WorkerInfo {
@@ -12,14 +12,19 @@ pub struct WorkerInfo {
     pub active: bool,
 }
 
+#[derive(Clone)]
+pub struct WorkerSession {
+    pub sender: tokio::sync::mpsc::UnboundedSender<String>,
+    pub closed: bool,
+}
+
 /// Represents a lease of a task to a worker to control who has tasks
 /// under execution and allow them to go back into the queue if finished.
 /// TODO: Implement timeout.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Lease {
-    worker_id: String,
-    task_id: Uuid,
-    attempts: usize,
+    pub worker_id: String,
+    pub attempts: usize,
 }
 
 #[derive(Default)]
@@ -28,8 +33,9 @@ pub struct BrokerState {
     pub mid_prio: RwLock<VecDeque<Task>>,
     pub low_prio: RwLock<VecDeque<Task>>,
     pub results: RwLock<HashMap<Uuid, TaskResult>>,
-    pub leases: RwLock<HashSet<Lease>>,
+    pub leases: RwLock<HashMap<Uuid, Lease>>,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
+    pub worker_sessions: RwLock<HashMap<String, WorkerSession>>,
 }
 
 impl BrokerState {
@@ -65,11 +71,13 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
-            self.leases.write().await.insert(Lease {
-                worker_id: worker_id.into(),
-                task_id: task.id,
-                attempts: 1,
-            });
+            self.leases.write().await.insert(
+                task.id,
+                Lease {
+                    worker_id: worker_id.into(),
+                    attempts: 1,
+                },
+            );
             Some(task)
         } else if let Some(task) = self.mid_prio.write().await.pop_front() {
             self.results.write().await.insert(
@@ -82,11 +90,13 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
-            self.leases.write().await.insert(Lease {
-                worker_id: worker_id.into(),
-                task_id: task.id,
-                attempts: 1,
-            });
+            self.leases.write().await.insert(
+                task.id,
+                Lease {
+                    worker_id: worker_id.into(),
+                    attempts: 1,
+                },
+            );
             Some(task)
         } else if let Some(task) = self.low_prio.write().await.pop_front() {
             self.results.write().await.insert(
@@ -99,11 +109,13 @@ impl BrokerState {
                     status: TaskStatus::Running,
                 },
             );
-            self.leases.write().await.insert(Lease {
-                worker_id: worker_id.into(),
-                task_id: task.id,
-                attempts: 1,
-            });
+            self.leases.write().await.insert(
+                task.id,
+                Lease {
+                    worker_id: worker_id.into(),
+                    attempts: 1,
+                },
+            );
             Some(task)
         } else {
             None
