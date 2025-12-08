@@ -222,10 +222,7 @@ async fn handle_cancellation(
     state: &Arc<WorkerState>,
     task: &Task,
 ) {
-    warn!(
-        "[WARNING] Task {} has been cancelled due to too many attempts.",
-        task.id
-    );
+    warn!("[WARNING] Task {} has been cancelled", task.id);
     state.running_tasks.write().await.remove(&task.id);
     let task_result = TaskResult {
         id: task.id,
