@@ -221,54 +221,62 @@ async fn process_jsonrpc_message(
 
         if &request.method == "register_worker" {
             let register_req: RegisterWorkerRequestParams = serde_json::from_value(request.params)?;
-            if !state
-                .worker_registry
-                .read()
-                .await
-                .contains_key(&register_req.worker_id)
-            {
-                info!(
-                    "[INFO] Registered new worker with ID = {}",
-                    &register_req.worker_id
-                );
-                state.worker_registry.write().await.insert(
-                    register_req.worker_id.clone(),
-                    WorkerInfo {
-                        worker_id: register_req.worker_id.clone(),
-                        last_heartbeat: tokio::time::Instant::now(),
-                        active: true,
-                    },
-                );
-                state.worker_sessions.write().await.insert(
-                    register_req.worker_id,
-                    WorkerSession {
-                        sender: worker_sender,
-                        closed: false,
-                    },
-                );
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: Some(serde_json::to_value(RegisterWorkerResponseParams {
-                        status: "registered".into(),
-                    })?),
-                    error: None,
-                }));
-            } else {
-                info!(
-                    "[INFO] Could not register. A worker with ID = {} already exists.",
-                    &register_req.worker_id
-                );
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: None,
-                    error: Some(JsonRpcError {
-                        code: JsonRpcErrorCode::InvalidParams,
-                        message: "Worker ID has already been registered".into(),
-                        data: None,
-                    }),
-                }));
+            let mut workers = state.worker_registry.write().await;
+            let mut sessions = state.worker_sessions.write().await;
+
+            match workers.get_mut(&register_req.worker_id) {
+                // Worker already existed, recreate session.
+                Some(winfo) => {
+                    info!("[INFO] Worker {} reconnected", &register_req.worker_id);
+                    let now = tokio::time::Instant::now();
+                    winfo.last_heartbeat = now;
+                    winfo.active = true;
+                    sessions.insert(
+                        register_req.worker_id.clone(),
+                        WorkerSession {
+                            sender: worker_sender,
+                            connected_at: now,
+                        },
+                    );
+                    return Ok(Some(JsonRpcResponse {
+                        jsonrpc: "2.0".into(),
+                        id: request.id,
+                        result: Some(serde_json::to_value(RegisterWorkerResponseParams {
+                            status: "registered".into(),
+                        })?),
+                        error: None,
+                    }));
+                }
+                // New worker, create both register and session.
+                None => {
+                    info!(
+                        "[INFO] Registering new worker with id = {}",
+                        &register_req.worker_id
+                    );
+                    workers.insert(
+                        register_req.worker_id.clone(),
+                        WorkerInfo {
+                            worker_id: register_req.worker_id.clone(),
+                            last_heartbeat: tokio::time::Instant::now(),
+                            active: true,
+                        },
+                    );
+                    sessions.insert(
+                        register_req.worker_id,
+                        WorkerSession {
+                            sender: worker_sender,
+                            connected_at: tokio::time::Instant::now(),
+                        },
+                    );
+                    return Ok(Some(JsonRpcResponse {
+                        jsonrpc: "2.0".into(),
+                        id: request.id,
+                        result: Some(serde_json::to_value(RegisterWorkerResponseParams {
+                            status: "registered".into(),
+                        })?),
+                        error: None,
+                    }));
+                }
             }
         } else if &request.method == "fetch_task" {
             let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;

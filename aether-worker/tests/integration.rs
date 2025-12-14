@@ -133,3 +133,22 @@ async fn simultaneous_tasks_long_and_incorrect() {
     tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
+
+#[tokio::test]
+async fn worker_reconnection() {
+    init_tracing();
+    tokio::spawn(aether_broker::run_app(8080, 8081));
+    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+    let mut worker_handle =
+        tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    tokio::select! {
+        _ = &mut worker_handle => {}
+        _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {
+            worker_handle.abort();
+        }
+    };
+    // Wait for old worker to completely die.
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+}
