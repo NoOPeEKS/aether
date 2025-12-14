@@ -15,7 +15,7 @@ pub struct WorkerInfo {
 #[derive(Clone, Debug)]
 pub struct WorkerSession {
     pub sender: tokio::sync::mpsc::UnboundedSender<String>,
-    pub closed: bool,
+    pub connected_at: tokio::time::Instant,
 }
 
 /// Represents a lease of a task to a worker to control who has tasks
