@@ -3,6 +3,7 @@ use aether_core::jrpc::{
     format_jrpc_message,
 };
 use aether_core::task::{TaskResult, TaskStatus};
+use aether_core::traits::Storage;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
@@ -11,9 +12,9 @@ use crate::state::{BrokerState, WorkerInfo, WorkerSession};
 
 const MAX_ATTEMPTS: usize = 5;
 
-pub async fn process_jsonrpc_message(
+pub async fn process_jsonrpc_message<S: Storage>(
     message: &[u8],
-    state: &BrokerState,
+    state: &BrokerState<S>,
     worker_sender: UnboundedSender<String>,
 ) -> anyhow::Result<Option<JsonRpcResponse>> {
     let message = Message::from_slice(message);
@@ -92,8 +93,8 @@ pub async fn process_jsonrpc_message(
     Ok(None)
 }
 
-async fn register_worker(
-    state: &BrokerState,
+async fn register_worker<S: Storage>(
+    state: &BrokerState<S>,
     request: JsonRpcRequest,
     worker_sender: UnboundedSender<String>,
 ) -> anyhow::Result<JsonRpcResponse> {
@@ -157,8 +158,8 @@ async fn register_worker(
     }
 }
 
-async fn fetch_task_for_worker(
-    state: &BrokerState,
+async fn fetch_task_for_worker<S: Storage>(
+    state: &BrokerState<S>,
     request: JsonRpcRequest,
 ) -> anyhow::Result<JsonRpcResponse> {
     let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;
@@ -198,7 +199,7 @@ async fn fetch_task_for_worker(
         return error_response("Cannot fetch task from an inactive worker");
     }
 
-    if let Some(task) = state.dequeue_task(&req_params.worker_id).await {
+    if let Some(task) = state.storage.dequeue_task(&req_params.worker_id).await {
         info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
         success_response(FetchTaskResponseResult { task: Some(task) })
     } else {
@@ -207,7 +208,7 @@ async fn fetch_task_for_worker(
     }
 }
 
-async fn process_heartbeat(state: &BrokerState, notification: JsonRpcNotification) {
+async fn process_heartbeat<S: Storage>(state: &BrokerState<S>, notification: JsonRpcNotification) {
     if let Ok(heartbeat_params) =
         serde_json::from_value::<HeartbeatNotificationParams>(notification.params)
         && state
@@ -229,37 +230,28 @@ async fn process_heartbeat(state: &BrokerState, notification: JsonRpcNotificatio
     }
 }
 
-async fn handle_report_result(
-    state: &BrokerState,
+async fn handle_report_result<S: Storage>(
+    state: &BrokerState<S>,
     notification: JsonRpcNotification,
 ) -> anyhow::Result<()> {
     if let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
-        && state.results.read().await.contains_key(&task_result.id)
+        && state.storage.contains_result(task_result.id).await
     {
         info!("[INFO] Result from task ID = {} received.", task_result.id);
         state
-            .results
-            .write()
-            .await
-            .insert(task_result.id, task_result.clone());
+            .storage
+            .store_result(task_result.id, task_result.clone()).await;
         if task_result.status == TaskStatus::Completed {
-            state.leases.write().await.remove(&task_result.id).unwrap();
+            state.storage.remove_lease(&task_result.id).await;
         } else if task_result.status == TaskStatus::Failed {
-            let mut leases = state.leases.write().await;
-            // TODO: Check this unwrap.
-            let lease = leases.get_mut(&task_result.id).unwrap();
-            state
-                .results
-                .write()
-                .await
-                .get_mut(&task_result.id)
-                .unwrap()
-                .status = TaskStatus::Failed;
-            lease.attempts += 1;
+            let (too_many_attempts, worker_id) = state
+                .storage
+                .mark_task_failed(&task_result.id, MAX_ATTEMPTS)
+                .await?;
 
-            if lease.attempts >= MAX_ATTEMPTS
-                && let Some(_) = state.worker_registry.read().await.get(&lease.worker_id)
-                && let Some(session) = state.worker_sessions.read().await.get(&lease.worker_id)
+            if too_many_attempts
+                && let Some(_) = state.worker_registry.read().await.get(&worker_id)
+                && let Some(session) = state.worker_sessions.read().await.get(&worker_id)
             {
                 let notif = JsonRpcNotification {
                     jsonrpc: "2.0".into(),
@@ -272,7 +264,7 @@ async fn handle_report_result(
                 session.sender.send(format_jrpc_message(notif)?)?;
             }
         } else if task_result.status == TaskStatus::Cancelled {
-            state.leases.write().await.remove(&task_result.id).unwrap();
+            state.storage.remove_lease(&task_result.id).await;
         }
     }
     Ok(())

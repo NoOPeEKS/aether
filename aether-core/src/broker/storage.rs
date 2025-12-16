@@ -6,8 +6,8 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 use uuid::Uuid;
 
-#[derive(Default, Debug)]
-pub struct InMemoryStorageState {
+#[derive(Default)]
+pub struct InMemoryStorage {
     pub high_prio: RwLock<VecDeque<Task>>,
     pub mid_prio: RwLock<VecDeque<Task>>,
     pub low_prio: RwLock<VecDeque<Task>>,
@@ -15,26 +15,21 @@ pub struct InMemoryStorageState {
     pub leases: RwLock<HashMap<Uuid, Lease>>,
 }
 
-#[derive(Default)]
-pub struct InMemoryStorage {
-    pub state: InMemoryStorageState,
-}
-
 #[async_trait::async_trait]
 impl Storage for InMemoryStorage {
     async fn enqueue_task(&self, task: Task) {
         match task.priority {
-            TaskPriority::High => self.state.high_prio.write().await.push_back(task),
-            TaskPriority::Medium => self.state.mid_prio.write().await.push_back(task),
-            TaskPriority::Low => self.state.low_prio.write().await.push_back(task),
+            TaskPriority::High => self.high_prio.write().await.push_back(task),
+            TaskPriority::Medium => self.mid_prio.write().await.push_back(task),
+            TaskPriority::Low => self.low_prio.write().await.push_back(task),
         }
     }
 
     async fn dequeue_task(&self, worker_id: &str) -> Option<Task> {
         // pop from high, then mid, then low
-        if let Some(t) = self.state.high_prio.write().await.pop_front() {
+        if let Some(t) = self.high_prio.write().await.pop_front() {
             let id = t.id;
-            self.state.results.write().await.insert(
+            self.results.write().await.insert(
                 id,
                 TaskResult {
                     id,
@@ -50,12 +45,12 @@ impl Storage for InMemoryStorage {
                 attempts: 0,
                 start_time: Instant::now(),
             };
-            self.state.leases.write().await.insert(id, lease);
+            self.leases.write().await.insert(id, lease);
             return Some(t);
         }
-        if let Some(t) = self.state.mid_prio.write().await.pop_front() {
+        if let Some(t) = self.mid_prio.write().await.pop_front() {
             let id = t.id;
-            self.state.results.write().await.insert(
+            self.results.write().await.insert(
                 id,
                 TaskResult {
                     id,
@@ -71,12 +66,12 @@ impl Storage for InMemoryStorage {
                 attempts: 0,
                 start_time: Instant::now(),
             };
-            self.state.leases.write().await.insert(id, lease);
+            self.leases.write().await.insert(id, lease);
             return Some(t);
         }
-        if let Some(t) = self.state.low_prio.write().await.pop_front() {
+        if let Some(t) = self.low_prio.write().await.pop_front() {
             let id = t.id;
-            self.state.results.write().await.insert(
+            self.results.write().await.insert(
                 id,
                 TaskResult {
                     id,
@@ -92,29 +87,65 @@ impl Storage for InMemoryStorage {
                 attempts: 0,
                 start_time: Instant::now(),
             };
-            self.state.leases.write().await.insert(id, lease);
+            self.leases.write().await.insert(id, lease);
             return Some(t);
         }
         None
     }
 
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
-        self.state.leases.write().await.remove(task_id)
+        self.leases.write().await.remove(task_id)
     }
 
     async fn store_result(&self, task_id: Uuid, result: TaskResult) {
-        self.state.results.write().await.insert(task_id, result);
+        self.results.write().await.insert(task_id, result);
     }
 
-    async fn get_result(&self, task_id: Uuid) -> Option<TaskResult> {
-        self.state.results.read().await.get(&task_id).cloned()
+    async fn contains_result(&self, task_id: Uuid) -> bool {
+        self.results.read().await.contains_key(&task_id)
+    }
+
+    async fn get_task(&self, task_id: Uuid) -> Option<TaskResult> {
+        self.results.read().await.get(&task_id).cloned()
+    }
+
+    async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
+        let tasks: Vec<TaskResult> = self.results.read().await.values().cloned().collect();
+        if tasks.is_empty() { None } else { Some(tasks) }
+    }
+
+    async fn mark_task_failed(
+        &self,
+        task_id: &Uuid,
+        max_attempts: usize,
+    ) -> anyhow::Result<(bool, String)> {
+        let mut leases = self.leases.write().await;
+        let lease = leases
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Lease did not exist in storage"))?;
+        lease.attempts += 1;
+        let wid = lease.worker_id.clone();
+
+        let mut results = self.results.write().await;
+        let result = results
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Result did not exist in storage."))?;
+        result.status = TaskStatus::Failed;
+        drop(results);
+
+        let too_many_attempts = lease.attempts >= max_attempts;
+        Ok((too_many_attempts, wid))
+    }
+
+    async fn get_all_leases(&self) -> HashMap<Uuid, Lease> {
+        self.leases.read().await.clone()
     }
 }
 
 impl InMemoryStorage {
     pub fn new() -> Self {
         Self {
-            state: InMemoryStorageState::default(),
+            ..Default::default()
         }
     }
 }

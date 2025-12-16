@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
+use aether_core::traits::Storage;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};
@@ -13,7 +14,7 @@ const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_sec
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
 const MAX_EXECUTION_TIME: tokio::time::Duration = tokio::time::Duration::from_secs(30);
 
-pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
+pub async fn create_jrpc_server<S: Storage>(state: Arc<BrokerState<S>>, port: usize) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap_or_else(|_| panic!("Could not bind JRPC server to 0.0.0.0:{port}"));
@@ -36,7 +37,7 @@ pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
     }
 }
 
-async fn handle_heartbeats(state: Arc<BrokerState>) {
+async fn handle_heartbeats<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
@@ -50,12 +51,12 @@ async fn handle_heartbeats(state: Arc<BrokerState>) {
     }
 }
 
-async fn handle_timeouts(state: Arc<BrokerState>) {
+async fn handle_timeouts<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
         let now = tokio::time::Instant::now();
-        let mut leases = state.leases.write().await;
+        let mut leases = state.storage.get_all_leases().await;
         for (task_id, lease) in leases.iter_mut() {
             if now.duration_since(lease.start_time) > MAX_EXECUTION_TIME {
                 warn!(
@@ -84,7 +85,7 @@ async fn handle_timeouts(state: Arc<BrokerState>) {
     }
 }
 
-async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
+async fn handle_jrpc_connection<S: Storage>(stream: TcpStream, state: Arc<BrokerState<S>>) {
     let (reader, mut writer) = TcpStream::into_split(stream);
     let mut reader = BufReader::new(reader);
 

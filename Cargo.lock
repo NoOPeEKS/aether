@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "aether-core",
  "anyhow",
+ "async-trait",
  "axum",
  "serde",
  "serde_json",

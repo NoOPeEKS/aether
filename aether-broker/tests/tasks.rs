@@ -1,3 +1,4 @@
+use aether_core::broker::storage::InMemoryStorage;
 use std::sync::Arc;
 
 use aether_broker::api::tasks::{CreateTaskResponse, GetAllTasksResponse};
@@ -10,7 +11,8 @@ use tower::Service;
 
 #[tokio::test]
 async fn test_create_task() {
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     let mut app = build_router(state);
 
     let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
@@ -38,7 +40,8 @@ async fn test_create_task() {
 
 #[tokio::test]
 async fn test_get_non_existant_task() {
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     let mut app = build_router(state);
 
     let response = app
@@ -63,7 +66,8 @@ async fn test_get_non_existant_task() {
 
 #[tokio::test]
 async fn test_get_info_from_task() {
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     let mut app = build_router(state);
 
     let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
@@ -110,7 +114,8 @@ async fn test_get_info_from_task() {
 
 #[tokio::test]
 async fn test_get_all_tasks() {
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     let mut app = build_router(state);
 
     let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});

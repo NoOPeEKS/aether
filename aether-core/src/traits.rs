@@ -1,4 +1,7 @@
-use crate::task::{Task, TaskResult};
+use std::collections::HashMap;
+
+use crate::task::Task;
+use crate::task::TaskResult;
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -21,9 +24,24 @@ pub trait Storage: Send + Sync + 'static {
     /// Remove the lease for task id (worker finished or lost).
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease>;
 
+    /// Remove the lease for task id (worker finished or lost).
+    async fn get_all_leases(&self) -> HashMap<Uuid, Lease>;
+
     /// Store a task result (completed/failed).
     async fn store_result(&self, task_id: Uuid, result: TaskResult);
 
+    /// Checks whether the storage contains a result for the given task id.
+    async fn contains_result(&self, task_id: Uuid) -> bool;
+
     /// Get task result if present.
-    async fn get_result(&self, task_id: Uuid) -> Option<TaskResult>;
+    async fn get_task(&self, task_id: Uuid) -> Option<TaskResult>;
+
+    /// Gets all tasks result if present.
+    async fn get_all_tasks(&self) -> Option<Vec<TaskResult>>;
+
+    async fn mark_task_failed(
+        &self,
+        task_id: &Uuid,
+        max_attempts: usize,
+    ) -> anyhow::Result<(bool, String)>;
 }

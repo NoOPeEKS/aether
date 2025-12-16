@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use aether_core::traits::Storage;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -23,8 +24,8 @@ pub struct CreateTaskResponse {
     pub status: TaskStatus,
 }
 
-pub async fn create_task_handler(
-    State(state): State<Arc<BrokerState>>,
+pub async fn create_task_handler<S: Storage>(
+    State(state): State<Arc<BrokerState<S>>>,
     Json(task): Json<CreateTaskRequest>,
 ) -> (StatusCode, Json<CreateTaskResponse>) {
     info!("[INFO] A task has been requested at the POST /tasks");
@@ -37,7 +38,7 @@ pub async fn create_task_handler(
     };
 
     // TODO: Handle non able to enqueue correctly.
-    state.enqueue_task(new_task).await;
+    state.storage.enqueue_task(new_task).await;
 
     (
         StatusCode::CREATED,
@@ -57,11 +58,11 @@ pub struct GetTaskResponse {
     error: Option<String>,
 }
 
-pub async fn get_task_handler(
-    State(state): State<Arc<BrokerState>>,
+pub async fn get_task_handler<S: Storage>(
+    State(state): State<Arc<BrokerState<S>>>,
     Path(task_id): Path<Uuid>,
 ) -> (StatusCode, Json<GetTaskResponse>) {
-    if let Some(task) = state.get_task(task_id).await {
+    if let Some(task) = state.storage.get_task(task_id).await {
         match task.status {
             TaskStatus::Completed => (
                 StatusCode::OK,
@@ -116,10 +117,10 @@ pub struct GetAllTasksResponse {
     pub tasks: Option<Vec<TaskResult>>,
 }
 
-pub async fn get_all_tasks_handler(
-    State(state): State<Arc<BrokerState>>,
+pub async fn get_all_tasks_handler<S: Storage>(
+    State(state): State<Arc<BrokerState<S>>>,
 ) -> (StatusCode, Json<GetAllTasksResponse>) {
-    if let Some(tasks) = state.get_all_tasks().await {
+    if let Some(tasks) = state.storage.get_all_tasks().await {
         (
             StatusCode::OK,
             Json(GetAllTasksResponse { tasks: Some(tasks) }),

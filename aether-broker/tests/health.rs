@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use aether_broker::{BrokerState, build_router};
+use aether_core::broker::storage::InMemoryStorage;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::Service;
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     let mut app = build_router(state);
 
     let response = app

@@ -4,31 +4,44 @@ pub mod state;
 
 use std::sync::Arc;
 
+use aether_core::broker::Broker;
+use aether_core::traits::Storage;
 pub use api::build_router;
 use jrpc::server::create_jrpc_server;
 pub use state::BrokerState;
 use tokio::net::TcpListener;
 
-pub async fn run_app(http_server_port: usize, rpc_server_port: usize) -> anyhow::Result<()> {
-    let state = Arc::new(BrokerState::new());
-    let jrpc_state = Arc::clone(&state);
+pub struct DefaultBroker<S>
+where
+    S: Storage,
+{
+    pub state: Arc<BrokerState<S>>,
+}
 
-    let app = api::build_router(state);
-    let listener = TcpListener::bind(format!("0.0.0.0:{http_server_port}"))
-        .await
-        .unwrap_or_else(|_| panic!("Could not bind Broker API to 0.0.0.0:{http_server_port}"));
-
-    tokio::try_join!(
-        async {
-            create_jrpc_server(jrpc_state, rpc_server_port).await;
-            Ok::<(), anyhow::Error>(())
-        },
-        async move {
-            axum::serve(listener, app)
-                .await
-                .map_err(|e| anyhow::anyhow!("Axum server error: {}", e))
-        }
-    )?;
-
-    Ok(())
+#[async_trait::async_trait]
+impl<S> Broker for DefaultBroker<S>
+where
+    S: Storage,
+{
+    async fn run(&self, http_port: usize, rpc_port: usize) -> anyhow::Result<()> {
+        tokio::try_join!(
+            self.run_http_server(http_port),
+            self.run_jrpc_server(rpc_port)
+        )?;
+        Ok(())
+    }
+    async fn run_http_server(&self, port: usize) -> anyhow::Result<()> {
+        let axum_state = Arc::clone(&self.state);
+        let app = api::build_router(axum_state);
+        let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+            .await
+            .unwrap_or_else(|_| panic!("Could not bind Broker API to 0.0.0.0:{port}"));
+        axum::serve(listener, app).await?;
+        Ok(())
+    }
+    async fn run_jrpc_server(&self, port: usize) -> anyhow::Result<()> {
+        let jrpc_state = Arc::clone(&self.state);
+        create_jrpc_server(jrpc_state, port).await;
+        Ok(())
+    }
 }
