@@ -16,6 +16,7 @@ tracing-subscriber.workspace = true
 base64 = "0.22"
 
 aether-core = { path = "../aether-core" }
+tokio-util = "0.7.17"
 
 [dev-dependencies]
 reqwest = "0.12"
