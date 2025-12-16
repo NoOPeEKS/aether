@@ -240,7 +240,8 @@ async fn handle_report_result<S: Storage>(
         info!("[INFO] Result from task ID = {} received.", task_result.id);
         state
             .storage
-            .store_result(task_result.id, task_result.clone()).await;
+            .store_result(task_result.id, task_result.clone())
+            .await;
         if task_result.status == TaskStatus::Completed {
             state.storage.remove_lease(&task_result.id).await;
         } else if task_result.status == TaskStatus::Failed {

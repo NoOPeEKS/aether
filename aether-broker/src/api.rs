@@ -3,12 +3,13 @@ pub mod tasks;
 
 use std::sync::Arc;
 
-use crate::state::BrokerState;
 use aether_core::traits::Storage;
 use axum::Router;
 use axum::routing::{get, post};
 use health::health_handler;
 use tasks::{create_task_handler, get_all_tasks_handler, get_task_handler};
+
+use crate::state::BrokerState;
 
 pub fn build_router<S: Storage>(state: Arc<BrokerState<S>>) -> Router {
     Router::new()

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::task::Task;
-use crate::task::TaskResult;
 use tokio::time::Instant;
 use uuid::Uuid;
+
+use crate::task::{Task, TaskResult};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Lease {

@@ -1,9 +1,8 @@
-use std::sync::Arc;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use aether_broker::{BrokerState, DefaultBroker};
-use aether_core::broker::storage::InMemoryStorage;
 use aether_core::broker::Broker;
+use aether_core::broker::storage::InMemoryStorage;
 static INIT: Once = Once::new();
 
 fn init_tracing() {
@@ -25,7 +24,10 @@ async fn correct_execution() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -46,7 +48,10 @@ async fn retry_and_cancel_incorrect_execution() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -66,7 +71,10 @@ async fn broker_cancels_too_long_task() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -86,7 +94,10 @@ async fn multiple_simultaneous_correct_tasks() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -115,7 +126,10 @@ async fn multiple_simultaneous_tasks_correct_and_incorrect() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -143,7 +157,10 @@ async fn simultaneous_tasks_long_and_incorrect() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let client = reqwest::Client::new();
@@ -170,7 +187,10 @@ async fn worker_reconnection() {
     init_tracing();
     let broker = get_broker();
     tokio::spawn(async move {
-        broker.run(8080, 8081).await.expect("Broker should not crash");
+        broker
+            .run(8080, 8081)
+            .await
+            .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
     let mut worker_handle =
