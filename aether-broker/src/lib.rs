@@ -2,14 +2,15 @@ pub mod api;
 pub mod jrpc;
 pub mod state;
 
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::RwLock;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use aether_core::traits::{Broker, Storage};
 pub use api::build_router;
 use jrpc::server::create_jrpc_server;
 pub use state::BrokerState;
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 
 pub struct DefaultBroker<S>
 where
