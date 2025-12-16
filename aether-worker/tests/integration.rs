@@ -1,7 +1,7 @@
-use std::sync::{Arc, Once};
+use std::sync::Once;
 
-use aether_broker::{BrokerState, DefaultBroker};
-use aether_core::broker::Broker;
+use aether_broker::DefaultBroker;
+use aether_core::traits::Broker;
 use aether_core::broker::storage::InMemoryStorage;
 static INIT: Once = Once::new();
 
@@ -13,10 +13,7 @@ fn init_tracing() {
 
 fn get_broker() -> DefaultBroker<InMemoryStorage> {
     let storage = InMemoryStorage::new();
-    let broker_state = BrokerState::new(storage);
-    DefaultBroker {
-        state: Arc::new(broker_state),
-    }
+    DefaultBroker::new(storage)
 }
 
 #[tokio::test]

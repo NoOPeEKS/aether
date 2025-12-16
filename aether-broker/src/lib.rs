@@ -2,7 +2,8 @@ pub mod api;
 pub mod jrpc;
 pub mod state;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 use aether_core::traits::{Broker, Storage};
 pub use api::build_router;
@@ -42,5 +43,20 @@ where
         let jrpc_state = Arc::clone(&self.state);
         create_jrpc_server(jrpc_state, port).await;
         Ok(())
+    }
+}
+
+impl<S> DefaultBroker<S>
+where
+    S: Storage,
+{
+    pub fn new(storage: S) -> Self {
+        Self {
+            state: Arc::new(BrokerState {
+                storage,
+                worker_registry: RwLock::new(HashMap::new()),
+                worker_sessions: RwLock::new(HashMap::new()),
+            }),
+        }
     }
 }
