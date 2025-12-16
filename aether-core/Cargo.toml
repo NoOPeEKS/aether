@@ -10,3 +10,4 @@ serde_json.workspace = true
 anyhow.workspace = true
 tower.workspace = true
 uuid.workspace = true
+async-trait = "0.1.89"
