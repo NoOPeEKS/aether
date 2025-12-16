@@ -1,8 +1,9 @@
 use std::sync::Once;
 
 use aether_broker::DefaultBroker;
-use aether_core::traits::Broker;
 use aether_core::broker::storage::InMemoryStorage;
+use aether_core::traits::Broker;
+use aether_worker::Worker;
 static INIT: Once = Once::new();
 
 fn init_tracing() {
@@ -14,6 +15,10 @@ fn init_tracing() {
 fn get_broker() -> DefaultBroker<InMemoryStorage> {
     let storage = InMemoryStorage::new();
     DefaultBroker::new(storage)
+}
+
+fn get_worker() -> Worker {
+    Worker::new("test-worker", "0.0.0.0:8081", 10)
 }
 
 #[tokio::test]
@@ -36,7 +41,10 @@ async fn correct_execution() {
         //     print(f"Valor i: {i}")
         .body("{\"name\":\"sample-task\", \"code_b64\": \"Zm9yIGkgaW4gcmFuZ2UoMCwgNSk6CiAgICBwcmludChmIlZhbG9yIGk6IHtpfSIpCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
 
@@ -59,7 +67,10 @@ async fn retry_and_cancel_incorrect_execution() {
         // cancelled for too many attempts by broker.
         .body("{\"name\":\"sample-task\", \"code_b64\": \"aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
 
@@ -82,7 +93,10 @@ async fn broker_cancels_too_long_task() {
         // default 30 secs and make the broker autocancel the task.
         .body("{\"name\":\"sample-task\", \"code_b64\": \"aW1wb3J0IHRpbWU7IHRpbWUuc2xlZXAoNDApCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(80)).await;
 }
 
@@ -114,7 +128,10 @@ async fn multiple_simultaneous_correct_tasks() {
         //     print(f"Valor i: {i}")
         .body("{\"name\":\"sample-task\", \"code_b64\": \"Zm9yIGkgaW4gcmFuZ2UoMCwgNSk6CiAgICBwcmludChmIlZhbG9yIGk6IHtpfSIpCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
 
@@ -145,7 +162,10 @@ async fn multiple_simultaneous_tasks_correct_and_incorrect() {
         // cancelled for too many attempts by broker.
         .body("{\"name\":\"sample-task\", \"code_b64\": \"aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
 
@@ -175,7 +195,10 @@ async fn simultaneous_tasks_long_and_incorrect() {
         // cancelled for too many attempts by broker.
         .body("{\"name\":\"sample-task\", \"code_b64\": \"aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==\", \"priority\": \"high\"}")
         .send().await.unwrap();
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 }
 
@@ -190,8 +213,10 @@ async fn worker_reconnection() {
             .expect("Broker should not crash");
     });
     tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
-    let mut worker_handle =
-        tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    let mut worker_handle = tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::select! {
         _ = &mut worker_handle => {}
         _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {
@@ -200,6 +225,9 @@ async fn worker_reconnection() {
     };
     // Wait for old worker to completely die.
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-    tokio::spawn(aether_worker::run_app("127.0.0.1:8081", "test-worker", 10));
+    let worker = get_worker();
+    tokio::spawn(async move {
+        worker.run().await.unwrap();
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 }
