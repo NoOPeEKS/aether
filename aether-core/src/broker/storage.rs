@@ -4,8 +4,8 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 use uuid::Uuid;
 
-use crate::task::{Task, TaskPriority, TaskResult, TaskStatus};
-use crate::traits::{Lease, Storage};
+use crate::task::{Lease, Task, TaskPriority, TaskResult, TaskStatus};
+use crate::traits::Storage;
 
 #[derive(Default)]
 pub struct InMemoryStorage {

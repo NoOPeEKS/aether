@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
-use tokio::time::Instant;
 use uuid::Uuid;
 
-use crate::task::{Task, TaskResult};
+use crate::task::{Lease, Task, TaskResult};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Lease {
-    pub worker_id: String,
-    pub attempts: usize,
-    pub start_time: Instant,
+#[async_trait::async_trait]
+pub trait Broker: Send + Sync {
+    async fn run(&self, http_port: usize, rpc_port: usize) -> anyhow::Result<()>;
+    async fn run_http_server(&self, port: usize) -> anyhow::Result<()>;
+    async fn run_jrpc_server(&self, port: usize) -> anyhow::Result<()>;
 }
 
 #[async_trait::async_trait]

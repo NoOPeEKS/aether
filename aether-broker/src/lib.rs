@@ -4,8 +4,7 @@ pub mod state;
 
 use std::sync::Arc;
 
-use aether_core::broker::Broker;
-use aether_core::traits::Storage;
+use aether_core::traits::{Broker, Storage};
 pub use api::build_router;
 use jrpc::server::create_jrpc_server;
 pub use state::BrokerState;

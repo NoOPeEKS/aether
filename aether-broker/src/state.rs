@@ -17,15 +17,6 @@ pub struct WorkerSession {
     pub connected_at: tokio::time::Instant,
 }
 
-/// Represents a lease of a task to a worker to control who has tasks
-/// under execution and allow them to go back into the queue if finished.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Lease {
-    pub worker_id: String,
-    pub attempts: usize,
-    pub start_time: Instant,
-}
-
 #[derive(Default, Debug)]
 pub struct BrokerState<S>
 where

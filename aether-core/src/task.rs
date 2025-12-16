@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tokio::time::Instant;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -34,4 +35,11 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Lease {
+    pub worker_id: String,
+    pub attempts: usize,
+    pub start_time: Instant,
 }
