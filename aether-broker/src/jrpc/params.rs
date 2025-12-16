@@ -1,4 +1,4 @@
-use aether_common::task::Task;
+use aether_core::task::Task;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

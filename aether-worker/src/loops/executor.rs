@@ -1,8 +1,8 @@
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
 
-use aether_common::jrpc::{JsonRpcNotification, format_jrpc_message};
-use aether_common::task::{Task, TaskResult, TaskStatus};
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
+use aether_core::task::{Task, TaskResult, TaskStatus};
 use base64::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;

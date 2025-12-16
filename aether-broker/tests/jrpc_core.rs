@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use aether_broker::jrpc::server::create_jrpc_server;
 use aether_broker::state::BrokerState;
-use aether_common::jrpc::{JsonRpcNotification, JsonRpcRequest};
+use aether_core::broker::storage::InMemoryStorage;
+use aether_core::jrpc::{JsonRpcNotification, JsonRpcRequest};
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -18,7 +19,8 @@ fn init_tracing() {
 #[tokio::test]
 async fn test_parsing() {
     init_tracing();
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     tokio::spawn(create_jrpc_server(state, 6969));
 
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -43,7 +45,8 @@ async fn test_parsing() {
 #[tokio::test]
 async fn test_register_worker() {
     init_tracing();
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     tokio::spawn(create_jrpc_server(state, 7777));
 
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -79,7 +82,8 @@ async fn test_register_worker() {
 #[tokio::test]
 async fn test_heartbeat() {
     init_tracing();
-    let state = Arc::new(BrokerState::new());
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
     tokio::spawn(create_jrpc_server(state, 6666));
 
     tokio::time::sleep(Duration::from_secs(5)).await;

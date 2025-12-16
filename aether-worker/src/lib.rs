@@ -4,7 +4,7 @@ mod state;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use aether_common::jrpc::{JsonRpcRequest, JsonRpcResponse, format_jrpc_message};
+use aether_core::jrpc::{JsonRpcRequest, JsonRpcResponse, format_jrpc_message};
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -25,53 +25,74 @@ fn next_id() -> usize {
     ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
 }
 
-pub async fn run_app(
-    remote_rpc_server_ip: &str,
-    worker_id: &str,
+pub struct Worker {
+    id: String,
     max_concurrent_tasks: usize,
-) -> anyhow::Result<()> {
-    let worker_state = Arc::new(WorkerState::new(worker_id));
-    let stream = TcpStream::connect(remote_rpc_server_ip).await?;
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
+    server_addr: String,
+    state: Arc<WorkerState>,
+    tx: mpsc::Sender<String>,
+    rx: mpsc::Receiver<String>,
+}
 
-    // WE JUST DO STRINGS FOR NOW BC WE DON'T KNOW IF IT'S NOTIFICATION OR REQUEST SO WE JUST
-    // SERIALIZE THEM INTO STRINGS.
-    // TODO: Check if it would just be better to use an unbounded_channel.
-    let (tx, rx) = mpsc::channel::<String>(9999999999);
+impl Worker {
+    pub fn new(id: &str, server_addr: &str, max_concurrent_tasks: usize) -> Self {
+        // WE JUST DO STRINGS FOR NOW BC WE DON'T KNOW IF IT'S NOTIFICATION OR REQUEST SO WE JUST
+        // SERIALIZE THEM INTO STRINGS.
+        // TODO: Check if it would just be better to use an unbounded_channel.
+        let (tx, rx) = mpsc::channel::<String>(999999999);
+        Self {
+            id: id.into(),
+            max_concurrent_tasks,
+            server_addr: server_addr.into(),
+            state: Arc::new(WorkerState::new(id)),
+            tx,
+            rx,
+        }
+    }
 
-    register_worker(&mut reader, &mut writer, worker_id).await?;
+    pub async fn run(self) -> anyhow::Result<()> {
+        let stream = TcpStream::connect(&self.server_addr).await?;
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
 
-    // Heartbeat task
-    let heartbeat_tx = tx.clone();
-    let heartbeat_state = Arc::clone(&worker_state);
-    let heartbeat_task = tokio::spawn(heartbeat_loop(heartbeat_tx, heartbeat_state));
+        register_worker(&mut reader, &mut writer, &self.id).await?;
 
-    // Writer task
-    let writer_task = tokio::spawn(writer_loop(rx, writer));
+        // Heartbeat loop
+        let heartbeat_tx = self.tx.clone();
+        let heartbeat_state = Arc::clone(&self.state);
+        let heartbeat_task = tokio::spawn(heartbeat_loop(heartbeat_tx, heartbeat_state));
 
-    // Reader task
-    let _reader_state = Arc::clone(&worker_state);
-    let reader_task = tokio::spawn(reader_loop(reader, _reader_state));
+        // Writer loop
+        let writer_task = tokio::spawn(writer_loop(self.rx, writer));
 
-    // Fetch task
-    let fetcher_tx = tx.clone();
-    let fetcher_state = Arc::clone(&worker_state);
-    let fetcher_task = tokio::spawn(fetch_loop(fetcher_tx, fetcher_state, max_concurrent_tasks));
+        // Reader task
+        let _reader_state = Arc::clone(&self.state);
+        let reader_task = tokio::spawn(reader_loop(reader, _reader_state));
 
-    // Executor task
-    let executor_tx = tx.clone();
-    let executor_state = Arc::clone(&worker_state);
-    let executor_task = tokio::spawn(executor_loop(executor_tx, executor_state));
+        // Fetch task
+        let fetcher_tx = self.tx.clone();
+        let fetcher_state = Arc::clone(&self.state);
+        let fetcher_task = tokio::spawn(fetch_loop(
+            fetcher_tx,
+            fetcher_state,
+            self.max_concurrent_tasks,
+        ));
 
-    tokio::select! {
-        _ = writer_task => error!("[ERROR] Writer task crashed."),
-        _ = reader_task => error!("[ERROR] Reader task crashed."),
-        _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
-        _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
-        _ = executor_task => error!("[ERROR] Executor task crashed."),
-    };
-    Ok(())
+        // Executor task
+        let executor_tx = self.tx.clone();
+        let executor_state = Arc::clone(&self.state);
+        let executor_task = tokio::spawn(executor_loop(executor_tx, executor_state));
+
+        tokio::select! {
+            _ = writer_task => error!("[ERROR] Writer task crashed."),
+            _ = reader_task => error!("[ERROR] Reader task crashed."),
+            _ = fetcher_task => error!("[ERROR] Fetcher task crashed."),
+            _ = heartbeat_task => error!("[ERROR] Heartbeat task crashed."),
+            _ = executor_task => error!("[ERROR] Executor task crashed."),
+        };
+
+        Ok(())
+    }
 }
 
 async fn register_worker(

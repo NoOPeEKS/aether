@@ -1,9 +1,8 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
-use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use aether_core::traits::Storage;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
-use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct WorkerInfo {
@@ -18,126 +17,25 @@ pub struct WorkerSession {
     pub connected_at: tokio::time::Instant,
 }
 
-/// Represents a lease of a task to a worker to control who has tasks
-/// under execution and allow them to go back into the queue if finished.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Lease {
-    pub worker_id: String,
-    pub attempts: usize,
-    pub start_time: Instant,
-}
-
 #[derive(Default, Debug)]
-pub struct BrokerState {
-    pub high_prio: RwLock<VecDeque<Task>>,
-    pub mid_prio: RwLock<VecDeque<Task>>,
-    pub low_prio: RwLock<VecDeque<Task>>,
-    pub results: RwLock<HashMap<Uuid, TaskResult>>,
-    pub leases: RwLock<HashMap<Uuid, Lease>>,
+pub struct BrokerState<S>
+where
+    S: Storage,
+{
+    pub storage: S,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
     pub worker_sessions: RwLock<HashMap<String, WorkerSession>>,
 }
 
-impl BrokerState {
-    pub fn new() -> Self {
+impl<S> BrokerState<S>
+where
+    S: Storage,
+{
+    pub fn new(storage: S) -> Self {
         Self {
-            ..Default::default()
+            storage,
+            worker_registry: RwLock::new(HashMap::new()),
+            worker_sessions: RwLock::new(HashMap::new()),
         }
-    }
-
-    pub async fn enqueue_task(&self, task: Task) {
-        match task.priority {
-            TaskPriority::High => {
-                self.high_prio.write().await.push_back(task);
-            }
-            TaskPriority::Medium => {
-                self.mid_prio.write().await.push_back(task);
-            }
-            TaskPriority::Low => {
-                self.low_prio.write().await.push_back(task);
-            }
-        };
-    }
-
-    pub async fn dequeue_task(&self, worker_id: &str) -> Option<Task> {
-        if let Some(task) = self.high_prio.write().await.pop_front() {
-            self.results.write().await.insert(
-                task.id,
-                TaskResult {
-                    id: task.id,
-                    name: task.name.clone(),
-                    code_b64: task.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                },
-            );
-            self.leases.write().await.insert(
-                task.id,
-                Lease {
-                    worker_id: worker_id.into(),
-                    attempts: 1,
-                    start_time: Instant::now(),
-                },
-            );
-            Some(task)
-        } else if let Some(task) = self.mid_prio.write().await.pop_front() {
-            self.results.write().await.insert(
-                task.id,
-                TaskResult {
-                    id: task.id,
-                    name: task.name.clone(),
-                    code_b64: task.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                },
-            );
-            self.leases.write().await.insert(
-                task.id,
-                Lease {
-                    worker_id: worker_id.into(),
-                    attempts: 1,
-                    start_time: Instant::now(),
-                },
-            );
-            Some(task)
-        } else if let Some(task) = self.low_prio.write().await.pop_front() {
-            self.results.write().await.insert(
-                task.id,
-                TaskResult {
-                    id: task.id,
-                    name: task.name.clone(),
-                    code_b64: task.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                },
-            );
-            self.leases.write().await.insert(
-                task.id,
-                Lease {
-                    worker_id: worker_id.into(),
-                    attempts: 1,
-                    start_time: Instant::now(),
-                },
-            );
-            Some(task)
-        } else {
-            None
-        }
-    }
-
-    pub async fn update_result(&self, id: Uuid, result: serde_json::Value) {
-        if let Some(t) = self.results.write().await.get_mut(&id) {
-            t.status = TaskStatus::Completed;
-            t.result = Some(result);
-        }
-    }
-
-    pub async fn get_task(&self, id: Uuid) -> Option<TaskResult> {
-        self.results.read().await.get(&id).cloned()
-    }
-
-    pub async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
-        let tasks: Vec<TaskResult> = self.results.read().await.values().cloned().collect();
-        if tasks.is_empty() { None } else { Some(tasks) }
     }
 }

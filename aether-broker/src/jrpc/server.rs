@@ -1,24 +1,20 @@
 use std::sync::Arc;
 
-use aether_common::jrpc::{
-    JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
-    format_jrpc_message,
-};
-use aether_common::task::{TaskResult, TaskStatus};
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
+use aether_core::traits::Storage;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
 
+use crate::jrpc::message::process_jsonrpc_message;
 use crate::jrpc::params::*;
-use crate::state::{BrokerState, WorkerInfo, WorkerSession};
+use crate::state::BrokerState;
 
 const HEARTBEAT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 const CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(5);
-const MAX_ATTEMPTS: usize = 5;
 const MAX_EXECUTION_TIME: tokio::time::Duration = tokio::time::Duration::from_secs(30);
 
-pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
+pub async fn create_jrpc_server<S: Storage>(state: Arc<BrokerState<S>>, port: usize) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap_or_else(|_| panic!("Could not bind JRPC server to 0.0.0.0:{port}"));
@@ -41,7 +37,7 @@ pub async fn create_jrpc_server(state: Arc<BrokerState>, port: usize) {
     }
 }
 
-async fn handle_heartbeats(state: Arc<BrokerState>) {
+async fn handle_heartbeats<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
@@ -55,12 +51,12 @@ async fn handle_heartbeats(state: Arc<BrokerState>) {
     }
 }
 
-async fn handle_timeouts(state: Arc<BrokerState>) {
+async fn handle_timeouts<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
         let now = tokio::time::Instant::now();
-        let mut leases = state.leases.write().await;
+        let mut leases = state.storage.get_all_leases().await;
         for (task_id, lease) in leases.iter_mut() {
             if now.duration_since(lease.start_time) > MAX_EXECUTION_TIME {
                 warn!(
@@ -89,7 +85,7 @@ async fn handle_timeouts(state: Arc<BrokerState>) {
     }
 }
 
-async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
+async fn handle_jrpc_connection<S: Storage>(stream: TcpStream, state: Arc<BrokerState<S>>) {
     let (reader, mut writer) = TcpStream::into_split(stream);
     let mut reader = BufReader::new(reader);
 
@@ -206,210 +202,4 @@ async fn handle_jrpc_connection(stream: TcpStream, state: Arc<BrokerState>) {
         }
     }
     drop(response_tx);
-}
-
-async fn process_jsonrpc_message(
-    message: &[u8],
-    state: &BrokerState,
-    worker_sender: UnboundedSender<String>,
-) -> anyhow::Result<Option<JsonRpcResponse>> {
-    let message = String::from_utf8_lossy(message);
-    let message: serde_json::Value = serde_json::from_str(&message)?;
-    if message.get("id").is_some() {
-        let request: JsonRpcRequest = serde_json::from_value(message)?;
-        info!("[INFO] Received a request of type {}", &request.method);
-
-        if &request.method == "register_worker" {
-            let register_req: RegisterWorkerRequestParams = serde_json::from_value(request.params)?;
-            let mut workers = state.worker_registry.write().await;
-            let mut sessions = state.worker_sessions.write().await;
-
-            match workers.get_mut(&register_req.worker_id) {
-                // Worker already existed, recreate session.
-                Some(winfo) => {
-                    info!("[INFO] Worker {} reconnected", &register_req.worker_id);
-                    let now = tokio::time::Instant::now();
-                    winfo.last_heartbeat = now;
-                    winfo.active = true;
-                    sessions.insert(
-                        register_req.worker_id.clone(),
-                        WorkerSession {
-                            sender: worker_sender,
-                            connected_at: now,
-                        },
-                    );
-                    return Ok(Some(JsonRpcResponse {
-                        jsonrpc: "2.0".into(),
-                        id: request.id,
-                        result: Some(serde_json::to_value(RegisterWorkerResponseParams {
-                            status: "registered".into(),
-                        })?),
-                        error: None,
-                    }));
-                }
-                // New worker, create both register and session.
-                None => {
-                    info!(
-                        "[INFO] Registering new worker with id = {}",
-                        &register_req.worker_id
-                    );
-                    workers.insert(
-                        register_req.worker_id.clone(),
-                        WorkerInfo {
-                            worker_id: register_req.worker_id.clone(),
-                            last_heartbeat: tokio::time::Instant::now(),
-                            active: true,
-                        },
-                    );
-                    sessions.insert(
-                        register_req.worker_id,
-                        WorkerSession {
-                            sender: worker_sender,
-                            connected_at: tokio::time::Instant::now(),
-                        },
-                    );
-                    return Ok(Some(JsonRpcResponse {
-                        jsonrpc: "2.0".into(),
-                        id: request.id,
-                        result: Some(serde_json::to_value(RegisterWorkerResponseParams {
-                            status: "registered".into(),
-                        })?),
-                        error: None,
-                    }));
-                }
-            }
-        } else if &request.method == "fetch_task" {
-            let req_params: FetchTaskRequestParams = serde_json::from_value(request.params)?;
-            info!("[INFO] Received a 'fetch_task' request");
-
-            if !state
-                .worker_registry
-                .read()
-                .await
-                .contains_key(&req_params.worker_id)
-            {
-                info!("[INFO] Could not fetch task from a non-registered worker.");
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: None,
-                    error: Some(JsonRpcError {
-                        code: JsonRpcErrorCode::InvalidRequest,
-                        message: "Cannot fetch task from non-registered worker.".into(),
-                        data: None,
-                    }),
-                }));
-            }
-
-            if let Some(winfo) = state
-                .worker_registry
-                .read()
-                .await
-                .get(&req_params.worker_id)
-                && !winfo.active
-            {
-                info!("[INFO] Could not fetch task from an inactive worker.");
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: None,
-                    error: Some(JsonRpcError {
-                        code: JsonRpcErrorCode::InvalidRequest,
-                        message: "Cannot fetch task from an inactive worker".into(),
-                        data: None,
-                    }),
-                }));
-            }
-
-            if let Some(task) = state.dequeue_task(&req_params.worker_id).await {
-                info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: Some(serde_json::to_value(FetchTaskResponseResult {
-                        task: Some(task),
-                    })?),
-                    error: None,
-                }));
-            } else {
-                info!("[INFO] Sending None task to ID = {}", &req_params.worker_id);
-                return Ok(Some(JsonRpcResponse {
-                    jsonrpc: "2.0".into(),
-                    id: request.id,
-                    result: Some(serde_json::to_value(FetchTaskResponseResult {
-                        task: None,
-                    })?),
-                    error: None,
-                }));
-            }
-        }
-    } else {
-        // It's a notification
-        let notification: JsonRpcNotification = serde_json::from_value(message)?;
-
-        if &notification.method == "heartbeat" {
-            if let Ok(heartbeat_params) =
-                serde_json::from_value::<HeartbeatNotificationParams>(notification.params)
-                && state
-                    .worker_registry
-                    .read()
-                    .await
-                    .contains_key(&heartbeat_params.worker_id)
-                && let Some(worker_info) = state
-                    .worker_registry
-                    .write()
-                    .await
-                    .get_mut(&heartbeat_params.worker_id)
-            {
-                info!(
-                    "[INFO] Heartbeat notification received from ID = {}",
-                    &worker_info.worker_id
-                );
-                worker_info.last_heartbeat = tokio::time::Instant::now();
-            }
-        } else if &notification.method == "report_result"
-            && let Ok(task_result) = serde_json::from_value::<TaskResult>(notification.params)
-            && state.results.read().await.contains_key(&task_result.id)
-        {
-            info!("[INFO] Result from task ID = {} received.", task_result.id);
-            state
-                .results
-                .write()
-                .await
-                .insert(task_result.id, task_result.clone());
-            if task_result.status == TaskStatus::Completed {
-                state.leases.write().await.remove(&task_result.id).unwrap();
-            } else if task_result.status == TaskStatus::Failed {
-                let mut leases = state.leases.write().await;
-                // TODO: Check this unwrap.
-                let lease = leases.get_mut(&task_result.id).unwrap();
-                state
-                    .results
-                    .write()
-                    .await
-                    .get_mut(&task_result.id)
-                    .unwrap()
-                    .status = TaskStatus::Failed;
-                lease.attempts += 1;
-
-                if lease.attempts >= MAX_ATTEMPTS
-                    && let Some(_) = state.worker_registry.read().await.get(&lease.worker_id)
-                    && let Some(session) = state.worker_sessions.read().await.get(&lease.worker_id)
-                {
-                    let notif = JsonRpcNotification {
-                        jsonrpc: "2.0".into(),
-                        method: "stop_execution".into(),
-                        params: serde_json::to_value(StopExecutionNotificationParams {
-                            task_id: task_result.id,
-                        })?,
-                    };
-                    // TODO: Handle this better.
-                    session.sender.send(format_jrpc_message(notif)?)?;
-                }
-            } else if task_result.status == TaskStatus::Cancelled {
-                state.leases.write().await.remove(&task_result.id).unwrap();
-            }
-        }
-    }
-    Ok(None)
 }
