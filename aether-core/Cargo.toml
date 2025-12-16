@@ -1,5 +1,5 @@
 [package]
-name = "aether-common"
+name = "aether-core"
 version = "0.1.0"
 edition = "2024"
 

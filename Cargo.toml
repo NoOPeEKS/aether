@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["aether-broker", "aether-client", "aether-common", "aether-worker"]
+members = ["aether-broker", "aether-client", "aether-core", "aether-worker"]
 
 [workspace.dependencies]
 tokio = { version = "1.48.0", features = ["full"] }

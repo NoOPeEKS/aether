@@ -15,7 +15,7 @@ tracing-subscriber.workspace = true
 
 base64 = "0.22"
 
-aether-common = { path = "../aether-common" }
+aether-core = { path = "../aether-core" }
 
 [dev-dependencies]
 reqwest = "0.12"

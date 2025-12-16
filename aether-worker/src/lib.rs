@@ -4,7 +4,7 @@ mod state;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use aether_common::jrpc::{JsonRpcRequest, JsonRpcResponse, format_jrpc_message};
+use aether_core::jrpc::{JsonRpcRequest, JsonRpcResponse, format_jrpc_message};
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aether_common::jrpc::{JsonRpcNotification, format_jrpc_message};
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};

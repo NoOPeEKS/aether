@@ -6,7 +6,7 @@ version = 4
 name = "aether-broker"
 version = "0.1.0"
 dependencies = [
- "aether-common",
+ "aether-core",
  "anyhow",
  "axum",
  "serde",
@@ -23,7 +23,7 @@ name = "aether-client"
 version = "0.1.0"
 
 [[package]]
-name = "aether-common"
+name = "aether-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -39,7 +39,7 @@ name = "aether-worker"
 version = "0.1.0"
 dependencies = [
  "aether-broker",
- "aether-common",
+ "aether-core",
  "anyhow",
  "base64",
  "reqwest",

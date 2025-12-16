@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use aether_common::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use uuid::Uuid;

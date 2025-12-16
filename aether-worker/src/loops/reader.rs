@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use aether_common::jrpc::{JsonRpcNotification, JsonRpcResponse};
-use aether_common::task::Task;
+use aether_core::jrpc::{JsonRpcNotification, JsonRpcResponse};
+use aether_core::task::Task;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;

@@ -1,8 +1,8 @@
-use aether_common::jrpc::{
+use aether_core::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     format_jrpc_message,
 };
-use aether_common::task::{TaskResult, TaskStatus};
+use aether_core::task::{TaskResult, TaskStatus};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 

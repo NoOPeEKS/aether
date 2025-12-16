@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aether_common::jrpc::{JsonRpcNotification, format_jrpc_message};
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
