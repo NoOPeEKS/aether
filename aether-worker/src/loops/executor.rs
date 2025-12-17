@@ -7,50 +7,89 @@ use base64::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::Duration;
-use tracing::{info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn, error};
 
 use crate::state::{PythonExecution, RunningTask, WorkerState};
 
-pub async fn executor_loop(writer_tx: mpsc::Sender<String>, state: Arc<WorkerState>) {
+use tokio::select;
+use tokio::time::{Duration, sleep};
+
+pub async fn executor_loop(
+    writer_tx: mpsc::Sender<String>,
+    state: Arc<WorkerState>,
+    shutdown_token: CancellationToken,
+) {
     info!("[INFO] Starting executor loop task");
+
     loop {
-        if let Some(task) = state.task_list.write().await.pop_front() {
-            info!("[INFO] Running task {}", task.id);
-            let updated_task_status = TaskResult {
-                id: task.id,
-                name: task.name.clone(),
-                code_b64: task.code_b64.clone(),
-                result: None,
-                status: TaskStatus::Running,
-            };
-            // TODO: Check these unwrap.
-            let task_status = serde_json::to_value(&updated_task_status).unwrap();
-            let updated_result = JsonRpcNotification {
-                jsonrpc: "2.0".into(),
-                method: "report_result".into(),
-                params: task_status,
-            };
-            let message = format_jrpc_message(updated_result).unwrap();
-            writer_tx.send(message).await.unwrap();
+        select! {
+            _ = shutdown_token.cancelled() => {
+                info!("[INFO] Executor loop shutting down, cleaning tasks and stopping executions...");
+                for (_, task) in state.running_tasks.write().await.iter_mut() {
+                    // TODO: Check if there's a way to use the task's cancel_tx to send oneshot
+                    // cancel.
+                    task.handle.abort();
+                }
+                state.running_tasks.write().await.drain();
+                state.task_list.write().await.clear();
+                break;
+            }
 
-            let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-            let state_clone = Arc::clone(&state);
+            _ = async {} => {
+                let task = {
+                    state.task_list.write().await.pop_front()
+                };
 
-            let task_id = &task.id.clone();
-            let handle = tokio::spawn(execute_task_select(
-                writer_tx.clone(),
-                state_clone,
-                task,
-                cancel_rx,
-            ));
-            state
-                .running_tasks
-                .write()
-                .await
-                .insert(*task_id, RunningTask { handle, cancel_tx });
+                let Some(task) = task else {
+                    // Avoid busy-looping when no work is available
+                    sleep(Duration::from_millis(100)).await;
+                    continue;
+                };
+
+                info!("[INFO] Running task {}", task.id);
+
+                let updated_task_status = TaskResult {
+                    id: task.id,
+                    name: task.name.clone(),
+                    code_b64: task.code_b64.clone(),
+                    result: None,
+                    status: TaskStatus::Running,
+                };
+
+                let task_status = serde_json::to_value(&updated_task_status).unwrap();
+                let updated_result = JsonRpcNotification {
+                    jsonrpc: "2.0".into(),
+                    method: "report_result".into(),
+                    params: task_status,
+                };
+
+                let message = format_jrpc_message(updated_result).unwrap();
+                if writer_tx.send(message).await.is_err() {
+                    error!("[ERROR] Executor loop: writer channel closed");
+                    break;
+                }
+
+                let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+                let state_clone = Arc::clone(&state);
+                let task_id = task.id;
+
+                let handle = tokio::spawn(execute_task_select(
+                    writer_tx.clone(),
+                    state_clone,
+                    task,
+                    cancel_rx,
+                ));
+
+                state.running_tasks.write().await.insert(
+                    task_id,
+                    RunningTask { handle, cancel_tx },
+                );
+            }
         }
     }
+
+    info!("[INFO] Executor loop exited");
 }
 
 async fn execute_task_select(
