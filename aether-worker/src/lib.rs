@@ -10,6 +10,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 use crate::loops::executor::executor_loop;
@@ -32,6 +33,7 @@ pub struct Worker {
     state: Arc<WorkerState>,
     tx: mpsc::Sender<String>,
     rx: mpsc::Receiver<String>,
+    shutdown_token: CancellationToken,
 }
 
 impl Worker {
@@ -47,6 +49,7 @@ impl Worker {
             state: Arc::new(WorkerState::new(id)),
             tx,
             rx,
+            shutdown_token: CancellationToken::new(),
         }
     }
 
@@ -60,14 +63,22 @@ impl Worker {
         // Heartbeat loop
         let heartbeat_tx = self.tx.clone();
         let heartbeat_state = Arc::clone(&self.state);
-        let heartbeat_task = tokio::spawn(heartbeat_loop(heartbeat_tx, heartbeat_state));
+        let heartbeat_task = tokio::spawn(heartbeat_loop(
+            heartbeat_tx,
+            heartbeat_state,
+            self.shutdown_token.clone(),
+        ));
 
         // Writer loop
-        let writer_task = tokio::spawn(writer_loop(self.rx, writer));
+        let writer_task = tokio::spawn(writer_loop(self.rx, writer, self.shutdown_token.clone()));
 
         // Reader task
         let _reader_state = Arc::clone(&self.state);
-        let reader_task = tokio::spawn(reader_loop(reader, _reader_state));
+        let reader_task = tokio::spawn(reader_loop(
+            reader,
+            _reader_state,
+            self.shutdown_token.clone(),
+        ));
 
         // Fetch task
         let fetcher_tx = self.tx.clone();
@@ -76,12 +87,17 @@ impl Worker {
             fetcher_tx,
             fetcher_state,
             self.max_concurrent_tasks,
+            self.shutdown_token.clone(),
         ));
 
         // Executor task
         let executor_tx = self.tx.clone();
         let executor_state = Arc::clone(&self.state);
-        let executor_task = tokio::spawn(executor_loop(executor_tx, executor_state));
+        let executor_task = tokio::spawn(executor_loop(
+            executor_tx,
+            executor_state,
+            self.shutdown_token.clone(),
+        ));
 
         tokio::select! {
             _ = writer_task => error!("[ERROR] Writer task crashed."),

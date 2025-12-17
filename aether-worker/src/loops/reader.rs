@@ -5,12 +5,17 @@ use aether_core::task::Task;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::state::WorkerState;
 
-pub async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, state: Arc<WorkerState>) {
+pub async fn reader_loop(
+    mut reader: BufReader<OwnedReadHalf>,
+    state: Arc<WorkerState>,
+    shutdown_token: CancellationToken,
+) {
     info!("[INFO] Starting reader task");
 
     loop {
@@ -20,15 +25,23 @@ pub async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, state: Arc<Worker
         // Read headers until empty line
         loop {
             headers.clear();
-            let _n = match reader.read_line(&mut headers).await {
-                Ok(0) => {
-                    info!("[INFO] Server closed connection");
+            tokio::select! {
+                _ = shutdown_token.cancelled() => {
+                    info!("[INFO] Reader task received the cancellation signal! (During header read)");
                     return;
                 }
-                Ok(n) => n,
-                Err(e) => {
-                    error!("[ERROR] Failed to read line from broker: {e}");
-                    return;
+                res = reader.read_line(&mut headers) => {
+                    match res {
+                        Ok(0) => {
+                            info!("[INFO] Server closed connection");
+                            return;
+                        }
+                        Ok(n) => n,
+                        Err(e) => {
+                            error!("[ERROR] Failed to read line from broker: {e}");
+                            return;
+                        }
+                    }
                 }
             };
 
@@ -53,10 +66,18 @@ pub async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, state: Arc<Worker
         };
 
         let mut body = vec![0u8; len];
-        if let Err(e) = reader.read_exact(&mut body).await {
-            error!("[ERROR] Failed to read full response body: {e}");
-            return;
-        }
+        tokio::select! {
+            _ = shutdown_token.cancelled() => {
+                info!("[INFO] Reader task received the cancellation signal! (During body read)");
+                return;
+            }
+            res = reader.read_exact(&mut body) => {
+                if let Err(e) = res {
+                    error!("[ERROR] Failed to read full response body: {e}");
+                    return;
+                }
+            }
+        };
 
         let msg = String::from_utf8_lossy(&body);
         info!("[INFO] Received from broker: {}", msg);
