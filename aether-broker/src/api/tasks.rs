@@ -62,7 +62,7 @@ pub async fn get_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
     Path(task_id): Path<Uuid>,
 ) -> (StatusCode, Json<GetTaskResponse>) {
-    if let Some(task) = state.storage.get_task(task_id).await {
+    if let Some(task) = state.storage.get_task_result(task_id).await {
         match task.status {
             TaskStatus::Completed => (
                 StatusCode::OK,
