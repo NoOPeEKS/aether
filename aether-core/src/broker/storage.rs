@@ -98,6 +98,21 @@ impl Storage for InMemoryStorage {
         self.leases.write().await.remove(task_id)
     }
 
+    async fn remove_leases_of_worker(&self, worker_id: &str) -> anyhow::Result<Vec<Uuid>> {
+        let mut leases = self.leases.write().await;
+
+        let lease_ids: Vec<_> = leases
+            .iter()
+            .filter(|(_, lease)| lease.worker_id == worker_id)
+            .map(|(l_id, _)| *l_id)
+            .collect();
+
+        _ = lease_ids.iter().filter_map(|id| leases.remove(id));
+        drop(leases);
+
+        Ok(lease_ids)
+    }
+
     async fn store_result(&self, task_id: Uuid, result: TaskResult) {
         self.results.write().await.insert(task_id, result);
     }
@@ -106,7 +121,7 @@ impl Storage for InMemoryStorage {
         self.results.read().await.contains_key(&task_id)
     }
 
-    async fn get_task(&self, task_id: Uuid) -> Option<TaskResult> {
+    async fn get_task_result(&self, task_id: Uuid) -> Option<TaskResult> {
         self.results.read().await.get(&task_id).cloned()
     }
 

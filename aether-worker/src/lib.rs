@@ -70,7 +70,13 @@ impl Worker {
         ));
 
         // Writer loop
-        let writer_task = tokio::spawn(writer_loop(self.rx, writer, self.shutdown_token.clone()));
+        let worker_id = self.id.clone();
+        let writer_task = tokio::spawn(writer_loop(
+            worker_id,
+            self.rx,
+            writer,
+            self.shutdown_token.clone(),
+        ));
 
         // Reader task
         let _reader_state = Arc::clone(&self.state);

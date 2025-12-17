@@ -1,11 +1,14 @@
+use aether_core::jrpc::{format_jrpc_message, JsonRpcNotification};
+use serde_json::json;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub async fn writer_loop(
+    worker_id: String,
     mut rx: mpsc::Receiver<String>,
     mut writer: OwnedWriteHalf,
     shutdown_token: CancellationToken,
@@ -14,8 +17,20 @@ pub async fn writer_loop(
     loop {
         let thing = tokio::select! {
             _ = shutdown_token.cancelled() => {
-                // TODO: Send shutdown message to broker before dying.
                 info!("[INFO] Writer task received cancellation signal. (During msg recv)");
+                let cancel_notif = JsonRpcNotification {
+                    jsonrpc: "2.0".into(),
+                    method: "worker_shutdown".into(),
+                    params: json!({"worker_id": worker_id}),
+                };
+                // SAFETY: This should never fail because JsonRpcNotification is Serializable.
+                let shutdown_message = format_jrpc_message(cancel_notif).unwrap();
+                if writer.write_all(shutdown_message.as_bytes()).await.is_err() {
+                    warn!("[WARNING] Failed to write all the shutdown notification to broker.");
+                }
+                if writer.flush().await.is_err() {
+                    warn!("[WARNING] Failed to flush the shutdown notification to broker.");
+                }
                 return;
             }
             msg = rx.recv() => {

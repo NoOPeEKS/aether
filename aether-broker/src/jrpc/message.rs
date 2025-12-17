@@ -2,7 +2,7 @@ use aether_core::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     format_jrpc_message,
 };
-use aether_core::task::{TaskResult, TaskStatus};
+use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
 use aether_core::traits::Storage;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
@@ -85,6 +85,10 @@ pub async fn process_jsonrpc_message<S: Storage>(
                         "[WARNING] An error occured while processing a 'report_result' notification."
                     ),
                 }
+                return Ok(None);
+            }
+            NotificationMethod::WorkerShutdown => {
+                handle_worker_shutdown(state, notification).await;
                 return Ok(None);
             }
             NotificationMethod::Unknown(_) => return Ok(None),
@@ -271,6 +275,74 @@ async fn handle_report_result<S: Storage>(
     Ok(())
 }
 
+async fn handle_worker_shutdown<S: Storage>(
+    state: &BrokerState<S>,
+    notification: JsonRpcNotification,
+) {
+    if let Ok(notif_params) =
+        serde_json::from_value::<WorkerShutdownNotificationParams>(notification.params)
+    {
+        info!("[INFO] Shutting down worker: {}", &notif_params.worker_id);
+        if state
+            .worker_sessions
+            .write()
+            .await
+            .remove(&notif_params.worker_id)
+            .is_none()
+        {
+            // We return early and do nothing because it's supposed to have a WorkerSession
+            // to be able to send shutdown.
+            warn!(
+                "[WARNING] Tried to shutdown inexistant worker session of worker {}",
+                &notif_params.worker_id
+            );
+            return;
+        }
+
+        if state
+            .worker_registry
+            .write()
+            .await
+            .remove(&notif_params.worker_id)
+            .is_none()
+        {
+            // We return early and do nothing because it's supposed to have a WorkerInfo
+            // registered to be able to send shutdown.
+            warn!(
+                "[WARNING] Tried to shutdown inexistant worker registry of worker {}",
+                &notif_params.worker_id
+            );
+            return;
+        }
+
+        let ids = state
+            .storage
+            .remove_leases_of_worker(&notif_params.worker_id)
+            .await;
+        if let Ok(ids) = ids {
+            for id in ids.into_iter() {
+                let task_result = state.storage.get_task_result(id).await;
+                if let Some(mut res) = task_result
+                    && (res.status == TaskStatus::Running || res.status == TaskStatus::Queued)
+                {
+                    // We set prio to high because this was already being executed before shutdown.
+                    let task_id = res.id;
+                    let new_task = Task {
+                        id: res.id,
+                        name: res.name.clone(),
+                        code_b64: res.code_b64.clone(),
+                        priority: TaskPriority::High,
+                    };
+                    res.status = TaskStatus::Cancelled;
+                    state.storage.enqueue_task(new_task).await;
+                    state.storage.store_result(res.id, res).await;
+                    info!("[INFO] Requeued task {} of shutdown worker {}", task_id, &notif_params.worker_id);
+                }
+            }
+        }
+    }
+}
+
 enum Message {
     Request(JsonRpcRequest),
     Notification(JsonRpcNotification),
@@ -302,6 +374,7 @@ enum RequestMethod<'a> {
 enum NotificationMethod {
     Heartbeat,
     ReportResult,
+    WorkerShutdown,
     Unknown(()),
 }
 
@@ -320,6 +393,7 @@ impl From<&str> for NotificationMethod {
         match value {
             "heartbeat" => Self::Heartbeat,
             "report_result" => Self::ReportResult,
+            "worker_shutdown" => Self::WorkerShutdown,
             _ => Self::Unknown(()),
         }
     }
