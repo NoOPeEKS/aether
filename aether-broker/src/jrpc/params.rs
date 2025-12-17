@@ -31,3 +31,8 @@ pub struct FetchTaskResponseResult {
 pub struct HeartbeatNotificationParams {
     pub worker_id: String,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WorkerShutdownNotificationParams {
+    pub worker_id: String,
+}

@@ -87,6 +87,10 @@ pub async fn process_jsonrpc_message<S: Storage>(
                 }
                 return Ok(None);
             }
+            NotificationMethod::WorkerShutdown => {
+                handle_worker_shutdown(state, notification).await;
+                return Ok(None);
+            }
             NotificationMethod::Unknown(_) => return Ok(None),
         }
     }
@@ -271,6 +275,21 @@ async fn handle_report_result<S: Storage>(
     Ok(())
 }
 
+async fn handle_worker_shutdown<S: Storage>(
+    state: &BrokerState<S>,
+    notification: JsonRpcNotification,
+) {
+    if let Ok(notif_params) =
+        serde_json::from_value::<WorkerShutdownNotificationParams>(notification.params)
+    {
+        // We don't care whether it is or not in the registry, as this doesn't fail.
+        state.worker_sessions.write().await.remove(&notif_params.worker_id);
+
+        // TODO: Check if we could leave the worker still registered but marked inactive?
+        state.worker_registry.write().await.remove(&notif_params.worker_id);
+    }
+}
+
 enum Message {
     Request(JsonRpcRequest),
     Notification(JsonRpcNotification),
@@ -302,6 +321,7 @@ enum RequestMethod<'a> {
 enum NotificationMethod {
     Heartbeat,
     ReportResult,
+    WorkerShutdown,
     Unknown(()),
 }
 
@@ -320,6 +340,7 @@ impl From<&str> for NotificationMethod {
         match value {
             "heartbeat" => Self::Heartbeat,
             "report_result" => Self::ReportResult,
+            "worker_shutdown" => Self::WorkerShutdown,
             _ => Self::Unknown(()),
         }
     }
