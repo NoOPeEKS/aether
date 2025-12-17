@@ -282,6 +282,7 @@ async fn handle_worker_shutdown<S: Storage>(
     if let Ok(notif_params) =
         serde_json::from_value::<WorkerShutdownNotificationParams>(notification.params)
     {
+        info!("[INFO] Shutting down worker: {}", &notif_params.worker_id);
         if state
             .worker_sessions
             .write()
@@ -291,6 +292,10 @@ async fn handle_worker_shutdown<S: Storage>(
         {
             // We return early and do nothing because it's supposed to have a WorkerSession
             // to be able to send shutdown.
+            warn!(
+                "[WARNING] Tried to shutdown inexistant worker session of worker {}",
+                &notif_params.worker_id
+            );
             return;
         }
 
@@ -303,6 +308,10 @@ async fn handle_worker_shutdown<S: Storage>(
         {
             // We return early and do nothing because it's supposed to have a WorkerInfo
             // registered to be able to send shutdown.
+            warn!(
+                "[WARNING] Tried to shutdown inexistant worker registry of worker {}",
+                &notif_params.worker_id
+            );
             return;
         }
 
@@ -317,6 +326,7 @@ async fn handle_worker_shutdown<S: Storage>(
                     && (res.status == TaskStatus::Running || res.status == TaskStatus::Queued)
                 {
                     // We set prio to high because this was already being executed before shutdown.
+                    let task_id = res.id;
                     let new_task = Task {
                         id: res.id,
                         name: res.name.clone(),
@@ -326,6 +336,7 @@ async fn handle_worker_shutdown<S: Storage>(
                     res.status = TaskStatus::Cancelled;
                     state.storage.enqueue_task(new_task).await;
                     state.storage.store_result(res.id, res).await;
+                    info!("[INFO] Requeued task {} of shutdown worker {}", task_id, &notif_params.worker_id);
                 }
             }
         }
