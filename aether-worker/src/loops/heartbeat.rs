@@ -20,6 +20,7 @@ pub async fn heartbeat_loop(
         tokio::select! {
             _ = shutdown_token.cancelled() => {
                 info!("[INFO] Heartbeat task received cancellation signal!");
+                return;
             }
             _ = interval.tick() => {
 

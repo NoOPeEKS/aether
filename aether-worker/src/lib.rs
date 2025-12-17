@@ -27,13 +27,13 @@ fn next_id() -> usize {
 }
 
 pub struct Worker {
-    id: String,
-    max_concurrent_tasks: usize,
-    server_addr: String,
-    state: Arc<WorkerState>,
-    tx: mpsc::Sender<String>,
-    rx: mpsc::Receiver<String>,
-    shutdown_token: CancellationToken,
+    pub id: String,
+    pub max_concurrent_tasks: usize,
+    pub server_addr: String,
+    pub state: Arc<WorkerState>,
+    pub tx: mpsc::Sender<String>,
+    pub rx: mpsc::Receiver<String>,
+    pub shutdown_token: CancellationToken,
 }
 
 impl Worker {

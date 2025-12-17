@@ -23,6 +23,7 @@ pub async fn fetch_loop(
         tokio::select! {
             _ = shutdown_token.cancelled() => {
                 info!("[INFO] Fetch task received cancellation task!");
+                return;
             }
             _ = interval.tick() => {
                 if state.task_list.read().await.len() < max_concurrent_tasks {
