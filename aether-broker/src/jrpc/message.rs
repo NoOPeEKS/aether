@@ -197,20 +197,24 @@ async fn fetch_task_for_worker<S: Storage>(
         return error_response("Cannot fetch task from non-registered worker.");
     }
 
-    if let Some(winfo) = workers.get(&req_params.worker_id)
-        && !winfo.active
-    {
-        info!("[INFO] Could not fetch task from an inactive worker.");
-        return error_response("Cannot fetch task from an inactive worker");
+    if let Some(winfo) = workers.get(&req_params.worker_id) {
+        if !winfo.active {
+            info!("[INFO] Could not fetch task from an inactive worker.");
+            return error_response("Cannot fetch task from an inactive worker");
+        }
+        if let Some(task) = state
+            .storage
+            .dequeue_task(&req_params.worker_id, &winfo.capabilities)
+            .await
+        {
+            info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
+            return success_response(FetchTaskResponseResult { task: Some(task) });
+        } else {
+            info!("[INFO] Sending None task to ID = {}", &req_params.worker_id);
+            return success_response(FetchTaskResponseResult { task: None });
+        }
     }
-
-    if let Some(task) = state.storage.dequeue_task(&req_params.worker_id).await {
-        info!("[INFO] Sending task to ID = {}", &req_params.worker_id);
-        success_response(FetchTaskResponseResult { task: Some(task) })
-    } else {
-        info!("[INFO] Sending None task to ID = {}", &req_params.worker_id);
-        success_response(FetchTaskResponseResult { task: None })
-    }
+    error_response("Could not fetch task from non-registered worker")
 }
 
 async fn process_heartbeat<S: Storage>(state: &BrokerState<S>, notification: JsonRpcNotification) {

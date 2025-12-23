@@ -51,10 +51,11 @@ pub struct Lease {
 pub enum TaskArchitecture {
     X86_64,
     Aarch64,
+    Any
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskCapabilities {
-    gpu: bool,
-    arch: TaskArchitecture,
+    pub gpu: bool,
+    pub arch: TaskArchitecture,
 }

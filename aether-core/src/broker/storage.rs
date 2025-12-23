@@ -4,6 +4,7 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 use uuid::Uuid;
 
+use crate::capabilities::WorkerCapabilities;
 use crate::task::{Lease, Task, TaskPriority, TaskResult, TaskStatus};
 use crate::traits::Storage;
 
@@ -16,6 +17,23 @@ pub struct InMemoryStorage {
     pub leases: RwLock<HashMap<Uuid, Lease>>,
 }
 
+async fn pop_compatible(
+    queue: &tokio::sync::RwLock<VecDeque<Task>>,
+    worker_caps: &WorkerCapabilities,
+) -> Option<Task> {
+    let mut queue = queue.write().await;
+
+    if let Some((idx, _)) = queue
+        .iter()
+        .enumerate()
+        .find(|(_, t)| worker_caps.supports(t.capabilities.clone()))
+    {
+        queue.remove(idx)
+    } else {
+        None
+    }
+}
+
 #[async_trait::async_trait]
 impl Storage for InMemoryStorage {
     async fn enqueue_task(&self, task: Task) {
@@ -26,75 +44,47 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    async fn dequeue_task(&self, worker_id: &str) -> Option<Task> {
-        // pop from high, then mid, then low
-        if let Some(t) = self.high_prio.write().await.pop_front() {
-            let id = t.id;
-            self.results.write().await.insert(
-                id,
-                TaskResult {
-                    id,
-                    name: t.name.clone(),
-                    code_b64: t.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                    capabilities: t.capabilities.clone(),
-                },
-            );
+    async fn dequeue_task(
+        &self,
+        worker_id: &str,
+        worker_caps: &WorkerCapabilities,
+    ) -> Option<Task> {
+        let task = if let Some(t) = pop_compatible(&self.high_prio, worker_caps).await {
+            Some(t)
+        } else if let Some(t) = pop_compatible(&self.mid_prio, worker_caps).await {
+            Some(t)
+        } else {
+            pop_compatible(&self.low_prio, worker_caps).await
+        };
 
-            let lease = Lease {
-                worker_id: worker_id.to_owned(),
-                attempts: 0,
-                start_time: Instant::now(),
-            };
-            self.leases.write().await.insert(id, lease);
-            return Some(t);
-        }
-        if let Some(t) = self.mid_prio.write().await.pop_front() {
-            let id = t.id;
-            self.results.write().await.insert(
-                id,
-                TaskResult {
-                    id,
-                    name: t.name.clone(),
-                    code_b64: t.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                    capabilities: t.capabilities.clone(),
-                },
-            );
+        match task {
+            Some(t) => {
+                let id = t.id;
 
-            let lease = Lease {
-                worker_id: worker_id.to_owned(),
-                attempts: 0,
-                start_time: Instant::now(),
-            };
-            self.leases.write().await.insert(id, lease);
-            return Some(t);
-        }
-        if let Some(t) = self.low_prio.write().await.pop_front() {
-            let id = t.id;
-            self.results.write().await.insert(
-                id,
-                TaskResult {
+                self.results.write().await.insert(
                     id,
-                    name: t.name.clone(),
-                    code_b64: t.code_b64.clone(),
-                    result: None,
-                    status: TaskStatus::Running,
-                    capabilities: t.capabilities.clone(),
-                },
-            );
+                    TaskResult {
+                        id,
+                        name: t.name.clone(),
+                        code_b64: t.code_b64.clone(),
+                        result: None,
+                        status: TaskStatus::Running,
+                        capabilities: t.capabilities.clone(),
+                    },
+                );
 
-            let lease = Lease {
-                worker_id: worker_id.to_owned(),
-                attempts: 0,
-                start_time: Instant::now(),
-            };
-            self.leases.write().await.insert(id, lease);
-            return Some(t);
+                self.leases.write().await.insert(
+                    id,
+                    Lease {
+                        worker_id: worker_id.to_owned(),
+                        attempts: 0,
+                        start_time: Instant::now(),
+                    },
+                );
+                Some(t)
+            }
+            None => return None,
         }
-        None
     }
 
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
