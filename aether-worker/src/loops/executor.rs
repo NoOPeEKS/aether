@@ -6,14 +6,13 @@ use aether_core::task::{Task, TaskResult, TaskStatus};
 use base64::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use tokio::select;
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::state::{PythonExecution, RunningTask, WorkerState};
-
-use tokio::select;
-use tokio::time::{Duration, sleep};
 
 pub async fn executor_loop(
     writer_tx: mpsc::Sender<String>,

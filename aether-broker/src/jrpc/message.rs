@@ -246,30 +246,35 @@ async fn handle_report_result<S: Storage>(
             .storage
             .store_result(task_result.id, task_result.clone())
             .await;
-        if task_result.status == TaskStatus::Completed {
-            state.storage.remove_lease(&task_result.id).await;
-        } else if task_result.status == TaskStatus::Failed {
-            let (too_many_attempts, worker_id) = state
-                .storage
-                .mark_task_failed(&task_result.id, MAX_ATTEMPTS)
-                .await?;
-
-            if too_many_attempts
-                && let Some(_) = state.worker_registry.read().await.get(&worker_id)
-                && let Some(session) = state.worker_sessions.read().await.get(&worker_id)
-            {
-                let notif = JsonRpcNotification {
-                    jsonrpc: "2.0".into(),
-                    method: "stop_execution".into(),
-                    params: serde_json::to_value(StopExecutionNotificationParams {
-                        task_id: task_result.id,
-                    })?,
-                };
-                // TODO: Handle this better.
-                session.sender.send(format_jrpc_message(notif)?)?;
+        match task_result.status {
+            TaskStatus::Completed => {
+                state.storage.remove_lease(&task_result.id).await;
             }
-        } else if task_result.status == TaskStatus::Cancelled {
-            state.storage.remove_lease(&task_result.id).await;
+            TaskStatus::Failed => {
+                let (too_many_attempts, worker_id) = state
+                    .storage
+                    .mark_task_failed(&task_result.id, MAX_ATTEMPTS)
+                    .await?;
+
+                if too_many_attempts
+                    && let Some(_) = state.worker_registry.read().await.get(&worker_id)
+                    && let Some(session) = state.worker_sessions.read().await.get(&worker_id)
+                {
+                    let notif = JsonRpcNotification {
+                        jsonrpc: "2.0".into(),
+                        method: "stop_execution".into(),
+                        params: serde_json::to_value(StopExecutionNotificationParams {
+                            task_id: task_result.id,
+                        })?,
+                    };
+                    // TODO: Handle this better.
+                    session.sender.send(format_jrpc_message(notif)?)?;
+                }
+            }
+            TaskStatus::Cancelled => {
+                state.storage.remove_lease(&task_result.id).await;
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -283,13 +288,9 @@ async fn handle_worker_shutdown<S: Storage>(
         serde_json::from_value::<WorkerShutdownNotificationParams>(notification.params)
     {
         info!("[INFO] Shutting down worker: {}", &notif_params.worker_id);
-        if state
-            .worker_sessions
-            .write()
-            .await
-            .remove(&notif_params.worker_id)
-            .is_none()
-        {
+        let mut worker_sessions = state.worker_sessions.write().await;
+
+        if worker_sessions.remove(&notif_params.worker_id).is_none() {
             // We return early and do nothing because it's supposed to have a WorkerSession
             // to be able to send shutdown.
             warn!(
@@ -299,13 +300,9 @@ async fn handle_worker_shutdown<S: Storage>(
             return;
         }
 
-        if state
-            .worker_registry
-            .write()
-            .await
-            .remove(&notif_params.worker_id)
-            .is_none()
-        {
+        let mut worker_registry = state.worker_registry.write().await;
+
+        if worker_registry.remove(&notif_params.worker_id).is_none() {
             // We return early and do nothing because it's supposed to have a WorkerInfo
             // registered to be able to send shutdown.
             warn!(
@@ -336,7 +333,10 @@ async fn handle_worker_shutdown<S: Storage>(
                     res.status = TaskStatus::Cancelled;
                     state.storage.enqueue_task(new_task).await;
                     state.storage.store_result(res.id, res).await;
-                    info!("[INFO] Requeued task {} of shutdown worker {}", task_id, &notif_params.worker_id);
+                    info!(
+                        "[INFO] Requeued task {} of shutdown worker {}",
+                        task_id, &notif_params.worker_id
+                    );
                 }
             }
         }

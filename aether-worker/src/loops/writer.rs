@@ -1,4 +1,4 @@
-use aether_core::jrpc::{format_jrpc_message, JsonRpcNotification};
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;

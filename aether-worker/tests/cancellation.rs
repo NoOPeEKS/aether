@@ -1,8 +1,8 @@
 use std::sync::Once;
 
 use aether_broker::DefaultBroker;
-use aether_core::traits::Broker;
 use aether_core::broker::storage::InMemoryStorage;
+use aether_core::traits::Broker;
 use aether_worker::Worker;
 static INIT: Once = Once::new();
 
