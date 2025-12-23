@@ -141,6 +141,7 @@ async fn register_worker<S: Storage>(
                     worker_id: register_req.worker_id.clone(),
                     last_heartbeat: tokio::time::Instant::now(),
                     active: true,
+                    capabilities: register_req.capabilities,
                 },
             );
             sessions.insert(

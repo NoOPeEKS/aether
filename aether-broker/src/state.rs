@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aether_core::traits::Storage;
+use aether_core::{capabilities::WorkerCapabilities, traits::Storage};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
@@ -9,6 +9,7 @@ pub struct WorkerInfo {
     pub worker_id: String,
     pub last_heartbeat: Instant,
     pub active: bool,
+    pub capabilities: WorkerCapabilities,
 }
 
 #[derive(Clone, Debug)]

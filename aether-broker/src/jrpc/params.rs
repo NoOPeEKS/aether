@@ -1,4 +1,4 @@
-use aether_core::task::Task;
+use aether_core::{capabilities::WorkerCapabilities, task::Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -10,6 +10,7 @@ pub struct StopExecutionNotificationParams {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterWorkerRequestParams {
     pub worker_id: String,
+    pub capabilities: WorkerCapabilities,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

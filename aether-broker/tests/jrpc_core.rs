@@ -56,7 +56,7 @@ async fn test_register_worker() {
         jsonrpc: "2.0".to_string(),
         id: "worker1-id1".to_string(),
         method: "register_worker".to_string(),
-        params: json!({"worker_id": "test-worker-1"}),
+        params: json!({"worker_id": "test-worker-1", "capabilities": {"gpu": false, "arch": "x86_64"}}),
     };
     let body = serde_json::to_string(&request).unwrap();
     stream
@@ -94,7 +94,7 @@ async fn test_heartbeat() {
         jsonrpc: "2.0".to_string(),
         id: "worker1-id1".to_string(),
         method: "register_worker".to_string(),
-        params: json!({"worker_id": "test-worker-1"}),
+        params: json!({"worker_id": "test-worker-1", "capabilities": {"gpu": false, "arch": "x86_64"}}),
     };
     let body = serde_json::to_string(&request).unwrap();
     writer
