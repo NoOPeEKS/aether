@@ -1,4 +1,5 @@
-use aether_core::{capabilities::WorkerCapabilities, task::Task};
+use aether_core::capabilities::WorkerCapabilities;
+use aether_core::task::Task;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

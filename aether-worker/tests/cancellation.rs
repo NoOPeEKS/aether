@@ -1,11 +1,9 @@
 use std::sync::Once;
 
 use aether_broker::DefaultBroker;
-use aether_core::{
-    broker::storage::InMemoryStorage,
-    capabilities::{WorkerCPUArchitecture, WorkerCapabilities},
-    traits::Broker,
-};
+use aether_core::broker::storage::InMemoryStorage;
+use aether_core::capabilities::{WorkerCPUArchitecture, WorkerCapabilities};
+use aether_core::traits::Broker;
 use aether_worker::Worker;
 static INIT: Once = Once::new();
 

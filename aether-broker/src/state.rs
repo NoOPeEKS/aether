@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use aether_core::{capabilities::WorkerCapabilities, traits::Storage};
+use aether_core::capabilities::WorkerCapabilities;
+use aether_core::traits::Storage;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
