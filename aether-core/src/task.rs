@@ -48,6 +48,7 @@ pub struct Lease {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TaskArchitecture {
     X86_64,
     Aarch64,
