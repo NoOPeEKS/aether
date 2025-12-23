@@ -4,6 +4,7 @@ mod state;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
+use aether_core::capabilities::WorkerCapabilities;
 use aether_core::jrpc::{JsonRpcRequest, JsonRpcResponse, format_jrpc_message};
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -34,10 +35,16 @@ pub struct Worker {
     pub tx: mpsc::Sender<String>,
     pub rx: mpsc::Receiver<String>,
     pub shutdown_token: CancellationToken,
+    pub capabilities: WorkerCapabilities,
 }
 
 impl Worker {
-    pub fn new(id: &str, server_addr: &str, max_concurrent_tasks: usize) -> Self {
+    pub fn new(
+        id: &str,
+        server_addr: &str,
+        max_concurrent_tasks: usize,
+        capabilities: WorkerCapabilities,
+    ) -> Self {
         // WE JUST DO STRINGS FOR NOW BC WE DON'T KNOW IF IT'S NOTIFICATION OR REQUEST SO WE JUST
         // SERIALIZE THEM INTO STRINGS.
         // TODO: Check if it would just be better to use an unbounded_channel.
@@ -50,6 +57,7 @@ impl Worker {
             tx,
             rx,
             shutdown_token: CancellationToken::new(),
+            capabilities,
         }
     }
 
@@ -58,7 +66,7 @@ impl Worker {
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
 
-        register_worker(&mut reader, &mut writer, &self.id).await?;
+        register_worker(&mut reader, &mut writer, &self.id, self.capabilities).await?;
 
         // Heartbeat loop
         let heartbeat_tx = self.tx.clone();
@@ -121,13 +129,19 @@ async fn register_worker(
     reader: &mut BufReader<OwnedReadHalf>,
     writer: &mut OwnedWriteHalf,
     worker_id: &str,
+    capabilities: WorkerCapabilities,
 ) -> anyhow::Result<()> {
+    let capabilities = match serde_json::to_value(capabilities) {
+        Ok(caps) => caps,
+        Err(_) => json!({"gpu": false, "arch": "x86_64"}),
+    };
     let register_worker_body = JsonRpcRequest {
         jsonrpc: "2.0".into(),
         id: format!("{}", next_id()),
         method: "register_worker".into(),
         params: json!({
             "worker_id": worker_id.to_string(),
+            "capabilities": capabilities,
         }),
     };
     let message = format_jrpc_message(register_worker_body)?;
