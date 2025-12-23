@@ -8,6 +8,7 @@ pub struct Task {
     pub name: String,
     pub code_b64: String,
     pub priority: TaskPriority,
+    pub capabilities: Option<TaskCapabilities>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -25,6 +26,7 @@ pub struct TaskResult {
     pub code_b64: String,
     pub result: Option<serde_json::Value>,
     pub status: TaskStatus,
+    pub capabilities: Option<TaskCapabilities>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -42,4 +44,19 @@ pub struct Lease {
     pub worker_id: String,
     pub attempts: usize,
     pub start_time: Instant,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum TaskArchitecture {
+    X86_64,
+    Aarch64,
+    Any
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TaskCapabilities {
+    pub gpu: bool,
+    pub arch: TaskArchitecture,
 }
