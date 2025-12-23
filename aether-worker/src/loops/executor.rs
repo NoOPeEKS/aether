@@ -54,6 +54,7 @@ pub async fn executor_loop(
                     code_b64: task.code_b64.clone(),
                     result: None,
                     status: TaskStatus::Running,
+                    capabilities: task.capabilities.clone(),
                 };
 
                 let task_status = serde_json::to_value(&updated_task_status).unwrap();
@@ -106,6 +107,7 @@ async fn execute_task_select(
                 code_b64: task.code_b64.clone(),
                 result: None,
                 status: TaskStatus::Failed,
+                capabilities: task.capabilities.clone(),
             };
             send_result_notification(&writer_tx, task_result).await;
             state.running_tasks.write().await.remove(&task.id);
@@ -135,6 +137,7 @@ async fn execute_task_select(
                         code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
                         status: TaskStatus::Completed,
+                        capabilities: task.capabilities.clone(),
                     };
                     send_result_notification(&writer_tx, task_result).await;
                     state.running_tasks.write().await.remove(&task.id);
@@ -155,6 +158,7 @@ async fn execute_task_select(
                         code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
                         status: TaskStatus::Failed,
+                        capabilities: task.capabilities.clone(),
                     };
                     send_result_notification(&writer_tx, task_result).await;
 
@@ -268,6 +272,7 @@ async fn handle_cancellation(
         code_b64: task.code_b64.clone(),
         result: None,
         status: TaskStatus::Cancelled,
+        capabilities: task.capabilities.clone(),
     };
     send_result_notification(writer_tx, task_result).await;
 }

@@ -38,6 +38,7 @@ impl Storage for InMemoryStorage {
                     code_b64: t.code_b64.clone(),
                     result: None,
                     status: TaskStatus::Running,
+                    capabilities: t.capabilities.clone(),
                 },
             );
 
@@ -59,6 +60,7 @@ impl Storage for InMemoryStorage {
                     code_b64: t.code_b64.clone(),
                     result: None,
                     status: TaskStatus::Running,
+                    capabilities: t.capabilities.clone(),
                 },
             );
 
@@ -80,6 +82,7 @@ impl Storage for InMemoryStorage {
                     code_b64: t.code_b64.clone(),
                     result: None,
                     status: TaskStatus::Running,
+                    capabilities: t.capabilities.clone(),
                 },
             );
 

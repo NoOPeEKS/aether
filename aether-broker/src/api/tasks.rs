@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
+use aether_core::task::{Task, TaskCapabilities, TaskPriority, TaskResult, TaskStatus};
 use aether_core::traits::Storage;
 use axum::Json;
 use axum::extract::{Path, State};
@@ -16,6 +16,7 @@ pub struct CreateTaskRequest {
     pub name: String,
     pub code_b64: String,
     pub priority: TaskPriority,
+    pub capabilities: Option<TaskCapabilities>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,6 +36,7 @@ pub async fn create_task_handler<S: Storage>(
         name: task.name,
         code_b64: task.code_b64,
         priority: task.priority,
+        capabilities: task.capabilities,
     };
 
     // TODO: Handle non able to enqueue correctly.

@@ -330,6 +330,7 @@ async fn handle_worker_shutdown<S: Storage>(
                         name: res.name.clone(),
                         code_b64: res.code_b64.clone(),
                         priority: TaskPriority::High,
+                        capabilities: res.capabilities.clone(),
                     };
                     res.status = TaskStatus::Cancelled;
                     state.storage.enqueue_task(new_task).await;
