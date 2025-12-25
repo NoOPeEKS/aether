@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::{capabilities::WorkerCapabilities, task::{Lease, Task, TaskResult}};
+use crate::capabilities::WorkerCapabilities;
+use crate::task::{Lease, Task, TaskResult};
 
 #[async_trait::async_trait]
 pub trait Broker: Send + Sync {
@@ -18,7 +19,8 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Pop a task from queues in priority order and create a lease for worker_id.
     /// Returns the task id if a task was leased.
-    async fn dequeue_task(&self, worker_id: &str, worker_caps: &WorkerCapabilities) -> Option<Task>;
+    async fn dequeue_task(&self, worker_id: &str, worker_caps: &WorkerCapabilities)
+    -> Option<Task>;
 
     /// Remove the lease for task id (worker finished or lost).
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease>;
