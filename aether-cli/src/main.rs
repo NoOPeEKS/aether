@@ -1,53 +1,7 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
+mod commands;
 
-#[derive(Parser)]
-#[command(name = "aether")]
-#[command(about = "Aether distributed task queue CLI", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Broker {
-        #[command(subcommand)]
-        command: BrokerCommands,
-    },
-    Worker {
-        #[command(subcommand)]
-        command: WorkerCommands,
-    },
-    Tui {
-        #[arg(long)]
-        broker_ip: String,
-
-        #[arg(long)]
-        broker_port: usize,
-    },
-}
-
-#[derive(Subcommand)]
-enum BrokerCommands {
-    Start {
-        #[arg(long)]
-        api_port: usize,
-
-        #[arg(long)]
-        jrpc_port: usize,
-    },
-}
-
-#[derive(Subcommand)]
-enum WorkerCommands {
-    Start {
-        #[arg(long)]
-        broker_ip: String,
-
-        #[arg(long)]
-        broker_port: usize,
-    },
-}
+use crate::commands::{BrokerCommands, Cli, Commands, WorkerCommands};
 
 fn main() {
     let cli = Cli::parse();
