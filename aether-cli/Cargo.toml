@@ -5,6 +5,13 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"]}
+aether-core = { path = "../aether-core"}
+aether-worker = { path = "../aether-worker"}
+aether-broker = { path = "../aether-broker"}
+
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [[bin]]
 name = "aether"

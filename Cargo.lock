@@ -23,7 +23,13 @@ dependencies = [
 name = "aether-cli"
 version = "0.1.0"
 dependencies = [
+ "aether-broker",
+ "aether-core",
+ "aether-worker",
  "clap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
