@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use aether_core::capabilities::WorkerCPUArchitecture;
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "aether")]
@@ -49,9 +50,35 @@ pub enum WorkerCommands {
     #[command(about = "Starts an Aether worker that connects to an existing broker.")]
     Start {
         #[arg(long)]
+        worker_id: String,
+
+        #[arg(long)]
         broker_ip: String,
 
         #[arg(long)]
         broker_port: usize,
+
+        #[arg(long)]
+        gpu: bool,
+
+        #[arg(value_enum, long)]
+        arch: SupportedArchs,
     },
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum SupportedArchs {
+    X86_64,
+    Aarch64,
+    Any,
+}
+
+impl SupportedArchs {
+    pub fn to_worker_arch(&self) -> WorkerCPUArchitecture {
+        match self {
+            SupportedArchs::X86_64 => WorkerCPUArchitecture::X86_64,
+            SupportedArchs::Aarch64 => WorkerCPUArchitecture::Aarch64,
+            SupportedArchs::Any => WorkerCPUArchitecture::Any,
+        }
+    }
 }
