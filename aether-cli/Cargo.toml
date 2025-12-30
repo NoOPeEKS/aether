@@ -9,6 +9,8 @@ aether-core = { path = "../aether-core"}
 aether-worker = { path = "../aether-worker"}
 aether-broker = { path = "../aether-broker"}
 
+anyhow.workspace = true
+base64.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

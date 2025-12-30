@@ -26,6 +26,8 @@ dependencies = [
  "aether-broker",
  "aether-core",
  "aether-worker",
+ "anyhow",
+ "base64",
  "clap",
  "tokio",
  "tracing",
