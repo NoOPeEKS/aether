@@ -1,4 +1,5 @@
-use aether_core::capabilities::WorkerCPUArchitecture;
+use aether_core::capabilities::CPUArchitecture;
+use aether_core::task::TaskPriority;
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -20,6 +21,11 @@ pub enum Commands {
     Worker {
         #[command(subcommand)]
         command: WorkerCommands,
+    },
+    #[command(about = "Subcommands for handling tasks.")]
+    Task {
+        #[command(subcommand)]
+        command: TaskCommands,
     },
     #[command(
         about = "Launch an interactive terminal user interface for handling an Aether cluster."
@@ -66,6 +72,42 @@ pub enum WorkerCommands {
     },
 }
 
+#[derive(Subcommand)]
+pub enum TaskCommands {
+    Submit {
+        #[arg(long)]
+        broker_ip: String,
+
+        #[arg(long)]
+        broker_api_port: usize,
+
+        #[arg(long)]
+        task_file: String,
+
+        #[arg(long)]
+        name: String,
+
+        #[arg(value_enum, long, default_value_t = SupportedPriorities::Medium)]
+        priority: SupportedPriorities,
+
+        #[arg(long, default_value_t = false)]
+        gpu: bool,
+
+        #[arg(value_enum, long, default_value_t = SupportedArchs::X86_64)]
+        arch: SupportedArchs,
+    },
+    Stop {
+        broker_ip: String,
+        broker_api_port: usize,
+        task_id: String,
+    },
+    Check {
+        broker_ip: String,
+        broker_api_port: usize,
+        task_id: String,
+    },
+}
+
 #[derive(Clone, ValueEnum)]
 pub enum SupportedArchs {
     X86_64,
@@ -73,12 +115,29 @@ pub enum SupportedArchs {
     Any,
 }
 
-impl SupportedArchs {
-    pub fn to_worker_arch(&self) -> WorkerCPUArchitecture {
-        match self {
-            SupportedArchs::X86_64 => WorkerCPUArchitecture::X86_64,
-            SupportedArchs::Aarch64 => WorkerCPUArchitecture::Aarch64,
-            SupportedArchs::Any => WorkerCPUArchitecture::Any,
+impl From<SupportedArchs> for CPUArchitecture {
+    fn from(value: SupportedArchs) -> Self {
+        match value {
+            SupportedArchs::X86_64 => CPUArchitecture::X86_64,
+            SupportedArchs::Aarch64 => CPUArchitecture::Aarch64,
+            SupportedArchs::Any => CPUArchitecture::Any,
+        }
+    }
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum SupportedPriorities {
+    High,
+    Medium,
+    Low,
+}
+
+impl From<SupportedPriorities> for TaskPriority {
+    fn from(value: SupportedPriorities) -> Self {
+        match value {
+            SupportedPriorities::High => TaskPriority::High,
+            SupportedPriorities::Medium => TaskPriority::Medium,
+            SupportedPriorities::Low => TaskPriority::Low,
         }
     }
 }

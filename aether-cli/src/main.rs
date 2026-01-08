@@ -1,13 +1,16 @@
 mod commands;
+mod task;
 
-use crate::commands::{BrokerCommands, Cli, Commands, WorkerCommands};
 use aether_broker::DefaultBroker;
-use aether_core::{
-    broker::storage::InMemoryStorage, capabilities::WorkerCapabilities, traits::Broker,
-};
+use aether_core::broker::storage::InMemoryStorage;
+use aether_core::capabilities::WorkerCapabilities;
+use aether_core::traits::Broker;
 use aether_worker::Worker;
-use tracing::info;
 use clap::Parser;
+use tracing::info;
+
+use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
+use crate::task::{parse_task_file, send_task_to_broker};
 
 #[tokio::main]
 async fn main() {
@@ -39,7 +42,7 @@ async fn main() {
             } => {
                 let worker_capabilities = WorkerCapabilities {
                     gpu,
-                    arch: arch.to_worker_arch(),
+                    arch: arch.into(),
                 };
                 let ip = format!("{broker_ip}:{broker_port}");
                 let worker = Worker::new(&worker_id, &ip, 10, worker_capabilities);
@@ -54,6 +57,56 @@ async fn main() {
                     }
                 }
             }
+        },
+        Commands::Task { command } => match command {
+            TaskCommands::Submit {
+                broker_ip,
+                broker_api_port,
+                task_file,
+                name,
+                priority,
+                gpu,
+                arch,
+            } => {
+                let task_b64 = match parse_task_file(&task_file) {
+                    Ok(task_b64) => task_b64,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
+                match send_task_to_broker(
+                    &broker_ip,
+                    broker_api_port,
+                    &task_b64,
+                    &name,
+                    priority,
+                    gpu,
+                    arch,
+                )
+                .await
+                {
+                    Ok(response) => {
+                        println!(
+                            "Task {} submitted. Status: {:?}",
+                            response.task_id, response.status
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                    }
+                }
+            }
+            TaskCommands::Stop {
+                broker_ip: _,
+                broker_api_port: _,
+                task_id: _,
+            } => {}
+            TaskCommands::Check {
+                broker_ip: _,
+                broker_api_port: _,
+                task_id: _,
+            } => {}
         },
         Commands::Tui {
             broker_ip: _,
