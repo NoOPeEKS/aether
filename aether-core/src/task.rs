@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 use uuid::Uuid;
 
+use crate::capabilities::TaskCapabilities;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Task {
     pub id: Uuid,
@@ -44,19 +46,4 @@ pub struct Lease {
     pub worker_id: String,
     pub attempts: usize,
     pub start_time: Instant,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "lowercase")]
-#[non_exhaustive]
-pub enum TaskArchitecture {
-    X86_64,
-    Aarch64,
-    Any,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TaskCapabilities {
-    pub gpu: bool,
-    pub arch: TaskArchitecture,
 }

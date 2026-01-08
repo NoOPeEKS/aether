@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use aether_core::task::{Task, TaskCapabilities, TaskPriority, TaskResult, TaskStatus};
+use aether_core::capabilities::TaskCapabilities;
+use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
 use aether_core::traits::Storage;
 use axum::Json;
 use axum::extract::{Path, State};
