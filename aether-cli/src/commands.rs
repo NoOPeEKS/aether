@@ -97,13 +97,23 @@ pub enum TaskCommands {
         arch: SupportedArchs,
     },
     Stop {
+        #[arg(long)]
         broker_ip: String,
+
+        #[arg(long)]
         broker_api_port: usize,
+
+        #[arg(long)]
         task_id: String,
     },
     Check {
+        #[arg(long)]
         broker_ip: String,
+        
+        #[arg(long)]
         broker_api_port: usize,
+
+        #[arg(long)]
         task_id: String,
     },
 }

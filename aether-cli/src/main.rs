@@ -10,7 +10,7 @@ use clap::Parser;
 use tracing::info;
 
 use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
-use crate::task::{parse_task_file, send_task_to_broker};
+use crate::task::{check_task, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
 async fn main() {
@@ -103,10 +103,21 @@ async fn main() {
                 task_id: _,
             } => {}
             TaskCommands::Check {
-                broker_ip: _,
-                broker_api_port: _,
-                task_id: _,
-            } => {}
+                broker_ip,
+                broker_api_port,
+                task_id,
+            } => match check_task(&broker_ip, broker_api_port, &task_id).await {
+                Ok(resp) => {
+                    if let Some(err) = resp.error {
+                        eprintln!("{err}");
+                    } else if let Some(task) = resp.task {
+                        let de_task = serde_json::to_string_pretty(&task)
+                            .expect("Failed deserialization of task.");
+                        println!("{de_task}");
+                    }
+                }
+                Err(err) => eprintln!("ERROR: {err}"),
+            },
         },
         Commands::Tui {
             broker_ip: _,
