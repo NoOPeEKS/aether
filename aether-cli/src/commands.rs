@@ -109,7 +109,7 @@ pub enum TaskCommands {
     Check {
         #[arg(long)]
         broker_ip: String,
-        
+
         #[arg(long)]
         broker_api_port: usize,
 
