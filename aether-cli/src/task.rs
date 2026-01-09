@@ -2,12 +2,10 @@ use std::path::Path;
 
 use aether_core::capabilities::CPUArchitecture;
 use aether_core::http::{CreateTaskResponse, GetTaskResponse};
-use aether_core::task::{TaskPriority, TaskResult, TaskStatus};
+use aether_core::task::TaskPriority;
 use base64::prelude::*;
 use reqwest::StatusCode;
-use serde::Deserialize;
 use serde_json::json;
-use uuid::Uuid;
 
 use crate::commands::{SupportedArchs, SupportedPriorities};
 

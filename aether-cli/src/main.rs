@@ -24,6 +24,9 @@ async fn main() {
                 api_port,
                 jrpc_port,
             } => {
+                info!(
+                    "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
+                );
                 let storage = InMemoryStorage::new();
                 let broker = DefaultBroker::new(storage);
                 broker
@@ -47,6 +50,7 @@ async fn main() {
                 let ip = format!("{broker_ip}:{broker_port}");
                 let worker = Worker::new(&worker_id, &ip, 10, worker_capabilities);
                 let shutdown_token = worker.shutdown_token.clone();
+                info!("[INFO] Trying to connect to broker at {broker_ip}:{broker_port}...");
                 tokio::select! {
                     _ = worker.run() => {
 
