@@ -140,7 +140,7 @@ aether broker start --api-port 8080 --jrpc-port 9090
 
 ```bash
 # Start worker with GPU support
-aether worker start --worker-id gpu-worker --broker-ip 10.0.0.1 --broker-port 9090 --gpu true --arch aarch64
+aether worker start --worker-id gpu-worker --broker-ip 10.0.0.1 --broker-port 9090 --gpu --arch aarch64
 ```
 
 ### Task Management
