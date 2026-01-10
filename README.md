@@ -116,7 +116,7 @@ Output:
 Requires Rust 1.88+.
 
 ```bash
-git clone https://github.com/yourusername/aether.git
+git clone https://github.com/NoOPeEKS/aether.git
 cd aether
 cargo build --release
 ```
