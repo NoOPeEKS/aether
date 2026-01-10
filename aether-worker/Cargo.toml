@@ -12,8 +12,8 @@ tower.workspace = true
 uuid.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+base64.workspace = true
 
-base64 = "0.22"
 
 aether-core = { path = "../aether-core" }
 tokio-util = "0.7.17"

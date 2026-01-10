@@ -2,7 +2,7 @@ use std::sync::Once;
 
 use aether_broker::DefaultBroker;
 use aether_core::broker::storage::InMemoryStorage;
-use aether_core::capabilities::{WorkerCPUArchitecture, WorkerCapabilities};
+use aether_core::capabilities::{CPUArchitecture, WorkerCapabilities};
 use aether_core::traits::Broker;
 use aether_worker::Worker;
 static INIT: Once = Once::new();
@@ -21,7 +21,7 @@ fn get_broker() -> DefaultBroker<InMemoryStorage> {
 fn get_worker() -> Worker {
     let capabilities = WorkerCapabilities {
         gpu: false,
-        arch: WorkerCPUArchitecture::X86_64,
+        arch: CPUArchitecture::X86_64,
     };
     Worker::new("test-worker", "0.0.0.0:8081", 10, capabilities)
 }

@@ -1,17 +1,21 @@
 use serde::{Deserialize, Serialize};
 
-use crate::task::{TaskArchitecture, TaskCapabilities};
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WorkerCapabilities {
     pub gpu: bool,
-    pub arch: WorkerCPUArchitecture,
+    pub arch: CPUArchitecture,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TaskCapabilities {
+    pub gpu: bool,
+    pub arch: CPUArchitecture,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "lowercase")]
-pub enum WorkerCPUArchitecture {
+pub enum CPUArchitecture {
     X86_64,
     Aarch64,
     Any,
@@ -24,15 +28,15 @@ impl WorkerCapabilities {
                 return false;
             }
             match self.arch {
-                WorkerCPUArchitecture::X86_64 => {
-                    task_caps.arch == TaskArchitecture::X86_64
-                        || task_caps.arch == TaskArchitecture::Any
+                CPUArchitecture::X86_64 => {
+                    task_caps.arch == CPUArchitecture::X86_64
+                        || task_caps.arch == CPUArchitecture::Any
                 }
-                WorkerCPUArchitecture::Aarch64 => {
-                    task_caps.arch == TaskArchitecture::Aarch64
-                        || task_caps.arch == TaskArchitecture::Any
+                CPUArchitecture::Aarch64 => {
+                    task_caps.arch == CPUArchitecture::Aarch64
+                        || task_caps.arch == CPUArchitecture::Any
                 }
-                WorkerCPUArchitecture::Any => true,
+                CPUArchitecture::Any => true,
             }
         } else {
             true

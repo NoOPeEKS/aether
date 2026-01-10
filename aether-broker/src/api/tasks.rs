@@ -1,29 +1,17 @@
 use std::sync::Arc;
 
-use aether_core::task::{Task, TaskCapabilities, TaskPriority, TaskResult, TaskStatus};
+use aether_core::http::{
+    CreateTaskRequest, CreateTaskResponse, GetAllTasksResponse, GetTaskResponse,
+};
+use aether_core::task::{Task, TaskStatus};
 use aether_core::traits::Storage;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
 use tracing::info;
 use uuid::Uuid;
 
 use crate::state::BrokerState;
-
-#[derive(Serialize, Deserialize)]
-pub struct CreateTaskRequest {
-    pub name: String,
-    pub code_b64: String,
-    pub priority: TaskPriority,
-    pub capabilities: Option<TaskCapabilities>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CreateTaskResponse {
-    pub task_id: Uuid,
-    pub status: TaskStatus,
-}
 
 pub async fn create_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
@@ -49,15 +37,6 @@ pub async fn create_task_handler<S: Storage>(
             status: TaskStatus::Queued,
         }),
     )
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetTaskResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    task: Option<TaskResult>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
 }
 
 pub async fn get_task_handler<S: Storage>(
@@ -112,11 +91,6 @@ pub async fn get_task_handler<S: Storage>(
             }),
         )
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetAllTasksResponse {
-    pub tasks: Option<Vec<TaskResult>>,
 }
 
 pub async fn get_all_tasks_handler<S: Storage>(
