@@ -1,4 +1,4 @@
-# Aether 🚀
+# Aether
 
 [![License: Apache License 2.0](https://img.shields.io/badge/license-Apache%20License%202.0-blue)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-1.91%2B-orange)](https://www.rust-lang.org/)
