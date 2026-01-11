@@ -4,6 +4,7 @@ mod task;
 use aether_broker::DefaultBroker;
 use aether_core::broker::storage::InMemoryStorage;
 use aether_core::capabilities::WorkerCapabilities;
+use aether_core::http::CreateTaskResponse;
 use aether_core::traits::Broker;
 use aether_worker::Worker;
 use clap::Parser;
@@ -90,12 +91,14 @@ async fn main() {
                 )
                 .await
                 {
-                    Ok(response) => {
-                        println!(
-                            "Task {} submitted. Status: {:?}",
-                            response.task_id, response.status
-                        );
-                    }
+                    Ok(response) => match response {
+                        CreateTaskResponse::Ok { task_id, status } => {
+                            println!("Task {} submitted. Status: {:?}", task_id, status);
+                        }
+                        CreateTaskResponse::Error { message } => {
+                            eprintln!("Status Code 500 Internal Server Error: {message}");
+                        }
+                    },
                     Err(err) => {
                         eprintln!("ERROR: {err}");
                     }

@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
+use redis::AsyncTypedCommands;
+use redis::RedisError;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -36,12 +38,13 @@ async fn pop_compatible(
 
 #[async_trait::async_trait]
 impl Storage for InMemoryStorage {
-    async fn enqueue_task(&self, task: Task) {
+    async fn enqueue_task(&self, task: Task) -> anyhow::Result<()> {
         match task.priority {
             TaskPriority::High => self.high_prio.write().await.push_back(task),
             TaskPriority::Medium => self.mid_prio.write().await.push_back(task),
             TaskPriority::Low => self.low_prio.write().await.push_back(task),
         }
+        Ok(())
     }
 
     async fn dequeue_task(
@@ -156,5 +159,78 @@ impl InMemoryStorage {
         Self {
             ..Default::default()
         }
+    }
+}
+
+pub struct RedisStorage {
+    client: redis::Client,
+    connection: redis::aio::MultiplexedConnection,
+}
+
+impl RedisStorage {
+    pub async fn new(ip: &str, port: usize) -> Result<Self, RedisError> {
+        let url = format!("redis://{ip}:{port}");
+        let client = redis::Client::open(url)?;
+        let connection = client.get_multiplexed_async_connection().await?;
+        Ok(Self { client, connection })
+    }
+}
+
+#[async_trait::async_trait]
+impl Storage for RedisStorage {
+    async fn enqueue_task(&self, task: Task) -> anyhow::Result<()> {
+        let mut conn = self.connection.clone();
+        let json = serde_json::to_string(&task)?;
+        let queue_key = match task.priority {
+            TaskPriority::High => "task_queue:high",
+            TaskPriority::Medium => "task_queue:medium",
+            TaskPriority::Low => "task_queue:low",
+        };
+        conn.lpush(queue_key, json).await?;
+        Ok(())
+    }
+
+    async fn dequeue_task(
+        &self,
+        worker_id: &str,
+        worker_caps: &WorkerCapabilities,
+    ) -> Option<Task> {
+        todo!("Implement this function");
+    }
+
+    async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
+        todo!("Implement this function");
+    }
+
+    async fn remove_leases_of_worker(&self, worker_id: &str) -> anyhow::Result<Vec<Uuid>> {
+        todo!("Implement this function");
+    }
+
+    async fn get_all_leases(&self) -> HashMap<Uuid, Lease> {
+        todo!("Implement this function");
+    }
+
+    async fn store_result(&self, task_id: Uuid, result: TaskResult) {
+        todo!("Implement this function");
+    }
+
+    async fn contains_result(&self, task_id: Uuid) -> bool {
+        todo!("Implement this function");
+    }
+
+    async fn get_task_result(&self, task_id: Uuid) -> Option<TaskResult> {
+        todo!("Implement this function");
+    }
+
+    async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
+        todo!("Implement this function");
+    }
+
+    async fn mark_task_failed(
+        &self,
+        task_id: &Uuid,
+        max_attempts: usize,
+    ) -> anyhow::Result<(bool, String)> {
+        todo!("Implement this function");
     }
 }

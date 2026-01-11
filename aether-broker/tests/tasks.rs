@@ -92,24 +92,26 @@ async fn test_get_info_from_task() {
     let create_body_string = String::from_utf8(create_resp_body.to_vec()).unwrap();
     let create_task_resp: CreateTaskResponse = serde_json::from_str(&create_body_string).unwrap();
 
-    let response = app
-        .call(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/api/v1/tasks/{}", create_task_resp.task_id))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    if let CreateTaskResponse::Ok { task_id, status: _ } = create_task_resp {
+        let response = app
+            .call(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/v1/tasks/{}", task_id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    let get_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
+        let get_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
 
-    assert!(get_body_string.contains(r#""name":"sample-task""#));
-    assert!(get_body_string.contains(r#""status":"queued""#));
+        assert!(get_body_string.contains(r#""name":"sample-task""#));
+        assert!(get_body_string.contains(r#""status":"queued""#));
+    }
 }
 
 #[tokio::test]

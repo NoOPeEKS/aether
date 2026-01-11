@@ -337,7 +337,8 @@ async fn handle_worker_shutdown<S: Storage>(
                         capabilities: res.capabilities.clone(),
                     };
                     res.status = TaskStatus::Cancelled;
-                    state.storage.enqueue_task(new_task).await;
+                    // TODO: Check this unwrap.
+                    state.storage.enqueue_task(new_task).await.unwrap();
                     state.storage.store_result(res.id, res).await;
                     info!(
                         "[INFO] Requeued task {} of shutdown worker {}",
