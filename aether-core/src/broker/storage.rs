@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::str::FromStr;
 use std::time::SystemTime;
 
 use redis::AsyncTypedCommands;
@@ -163,7 +164,7 @@ impl InMemoryStorage {
 }
 
 pub struct RedisStorage {
-    client: redis::Client,
+    _client: redis::Client,
     connection: redis::aio::MultiplexedConnection,
 }
 
@@ -172,7 +173,10 @@ impl RedisStorage {
         let url = format!("redis://{ip}:{port}");
         let client = redis::Client::open(url)?;
         let connection = client.get_multiplexed_async_connection().await?;
-        Ok(Self { client, connection })
+        Ok(Self {
+            _client: client,
+            connection,
+        })
     }
 }
 
@@ -259,11 +263,41 @@ impl Storage for RedisStorage {
     }
 
     async fn remove_leases_of_worker(&self, worker_id: &str) -> anyhow::Result<Vec<Uuid>> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let lease_keys = conn.keys("leases:*").await?;
+        let mut removed_ids = Vec::new();
+        for key in &lease_keys {
+            if let Ok(Some(lease_json)) = conn.get(key).await
+                && let Ok(lease_data) = serde_json::from_str::<Lease>(&lease_json)
+                && lease_data.worker_id == *worker_id
+                && let Some(task_id_str) = key.strip_prefix("leases:")
+                && let Ok(task_id) = Uuid::parse_str(task_id_str)
+            {
+                conn.del(key).await?;
+                removed_ids.push(task_id);
+            }
+        }
+        Ok(removed_ids)
     }
 
     async fn get_all_leases(&self) -> HashMap<Uuid, Lease> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let lease_keys = match conn.keys("leases:*").await {
+            Ok(keys) => keys,
+            Err(_) => return HashMap::new(),
+        };
+        let mut leases = HashMap::new();
+        for key in lease_keys {
+            if let Some(task_id) = key.clone().strip_prefix("leases:")
+                && let Ok(Some(lease_json)) = conn.get(key).await
+                && let Ok(lease) = serde_json::from_str::<Lease>(&lease_json)
+                && let Ok(task_uid) = Uuid::from_str(task_id)
+            {
+                leases.insert(task_uid, lease);
+            }
+        }
+
+        leases
     }
 
     async fn store_result(&self, task_id: Uuid, result: TaskResult) {
@@ -293,7 +327,20 @@ impl Storage for RedisStorage {
     }
 
     async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let mut tasks = Vec::new();
+
+        if let Ok(results_keys) = conn.keys("task_results:*").await {
+            for key in results_keys {
+                if let Ok(Some(task_result)) = conn.get(key).await
+                    && let Ok(result) = serde_json::from_str::<TaskResult>(&task_result)
+                {
+                    tasks.push(result);
+                }
+            }
+        }
+
+        if tasks.is_empty() { None } else { Some(tasks) }
     }
 
     async fn mark_task_failed(
@@ -301,6 +348,27 @@ impl Storage for RedisStorage {
         task_id: &Uuid,
         max_attempts: usize,
     ) -> anyhow::Result<(bool, String)> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let lease_key = format!("leases:{task_id}");
+        let result_key = format!("task_results:{task_id}");
+
+        if let Ok(Some(lease_json)) = conn.get(&lease_key).await {
+            let mut lease: Lease = serde_json::from_str(&lease_json)?;
+            lease.attempts += 1;
+            conn.set(&lease_key, serde_json::to_string(&lease)?).await?;
+
+            if let Ok(Some(result_json)) = conn.get(&result_key).await {
+                let mut result: TaskResult = serde_json::from_str(&result_json)?;
+                result.status = TaskStatus::Failed;
+                conn.set(&result_key, serde_json::to_string(&result)?)
+                    .await?;
+                let too_many_attempts = lease.attempts >= max_attempts;
+                return Ok((too_many_attempts, lease.worker_id));
+            } else {
+                anyhow::bail!("Result did not exist in storage");
+            }
+        } else {
+            anyhow::bail!("lease did not exist in storage");
+        }
     }
 }
