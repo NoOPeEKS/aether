@@ -1,9 +1,9 @@
 use std::collections::{HashMap, VecDeque};
+use std::time::SystemTime;
 
 use redis::AsyncTypedCommands;
 use redis::RedisError;
 use tokio::sync::RwLock;
-use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::capabilities::WorkerCapabilities;
@@ -81,7 +81,7 @@ impl Storage for InMemoryStorage {
                     Lease {
                         worker_id: worker_id.to_owned(),
                         attempts: 0,
-                        start_time: Instant::now(),
+                        start_time: SystemTime::now(),
                     },
                 );
                 Some(t)
@@ -232,7 +232,7 @@ impl Storage for RedisStorage {
                     let lease = Lease {
                         worker_id: worker_id.to_owned(),
                         attempts: 1,
-                        start_time: Instant::now(),
+                        start_time: SystemTime::now(),
                     };
                     // TODO: Check this unwrap.
                     let lease_json = serde_json::to_string(&lease).unwrap();

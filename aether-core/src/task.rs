@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tokio::time::Instant;
+use std::time::SystemTime;
 use uuid::Uuid;
 
 use crate::capabilities::TaskCapabilities;
@@ -45,5 +45,5 @@ pub enum TaskStatus {
 pub struct Lease {
     pub worker_id: String,
     pub attempts: usize,
-    pub start_time: Instant,
+    pub start_time: SystemTime,
 }

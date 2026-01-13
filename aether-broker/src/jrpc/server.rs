@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use aether_core::traits::Storage;
@@ -55,10 +56,14 @@ async fn handle_timeouts<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
-        let now = tokio::time::Instant::now();
+        let now = SystemTime::now();
         let mut leases = state.storage.get_all_leases().await;
         for (task_id, lease) in leases.iter_mut() {
-            if now.duration_since(lease.start_time) > MAX_EXECUTION_TIME {
+            if now
+                .duration_since(lease.start_time)
+                .unwrap_or(Duration::ZERO)
+                > MAX_EXECUTION_TIME
+            {
                 warn!(
                     "[WARNING] Task {} exceeded maximum execution time. Cancelling...",
                     task_id
