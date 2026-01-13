@@ -195,11 +195,67 @@ impl Storage for RedisStorage {
         worker_id: &str,
         worker_caps: &WorkerCapabilities,
     ) -> Option<Task> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let queues = ["task_queue:high", "task_queue:medium", "task_queue:low"];
+        for queue_key in queues {
+            let tasks = match conn.lrange(queue_key, 0, -1).await {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            for task_json in tasks {
+                let task: Task = match serde_json::from_str(&task_json) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if worker_caps.supports(task.capabilities.clone()) {
+                    // Remove the task from the queue.
+                    match conn.lrem(queue_key, 1, &task_json).await {
+                        Ok(_) => {}
+                        Err(_) => continue,
+                    }
+                    let result_key = format!("task_results:{}", task.id);
+                    let result = TaskResult {
+                        id: task.id,
+                        name: task.name,
+                        code_b64: task.code_b64,
+                        result: None,
+                        status: TaskStatus::Queued,
+                        capabilities: task.capabilities,
+                    };
+                    // TODO: Check this unwrap.
+                    let result_json = serde_json::to_string(&result).unwrap();
+                    match conn.set(result_key, result_json).await {
+                        Ok(_) => {}
+                        Err(_) => continue,
+                    }
+                    let lease_key = format!("leases:{}", task.id);
+                    let lease = Lease {
+                        worker_id: worker_id.to_owned(),
+                        attempts: 1,
+                        start_time: Instant::now(),
+                    };
+                    // TODO: Check this unwrap.
+                    let lease_json = serde_json::to_string(&lease).unwrap();
+                    match conn.set(lease_key, lease_json).await {
+                        Ok(_) => {}
+                        Err(_) => continue,
+                    }
+                }
+            }
+        }
+        None
     }
 
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let lease_key = format!("leases:{task_id}");
+        if let Ok(Some(lease)) = conn.get(lease_key).await {
+            if let Ok(lease) = serde_json::from_str::<Lease>(&lease) {
+                return Some(lease);
+            }
+            return None;
+        }
+        None
     }
 
     async fn remove_leases_of_worker(&self, worker_id: &str) -> anyhow::Result<Vec<Uuid>> {
@@ -211,15 +267,29 @@ impl Storage for RedisStorage {
     }
 
     async fn store_result(&self, task_id: Uuid, result: TaskResult) {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let result_key = format!("task_results:{task_id}");
+        if let Ok(result_json) = serde_json::to_string(&result) {
+            conn.set(result_key, result_json).await.unwrap();
+        }
     }
 
     async fn contains_result(&self, task_id: Uuid) -> bool {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let result_key = format!("task_results:{task_id}");
+        conn.exists(result_key).await.unwrap_or(false)
     }
 
     async fn get_task_result(&self, task_id: Uuid) -> Option<TaskResult> {
-        todo!("Implement this function");
+        let mut conn = self.connection.clone();
+        let result_key = format!("task_results:{task_id}");
+        let task_res = conn.get(result_key).await.unwrap_or(None);
+        if let Some(tr) = task_res {
+            // TODO: Check this unwrap.
+            let res: TaskResult = serde_json::from_str(&tr).unwrap();
+            return Some(res);
+        }
+        None
     }
 
     async fn get_all_tasks(&self) -> Option<Vec<TaskResult>> {

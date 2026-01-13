@@ -41,7 +41,7 @@ pub enum TaskStatus {
     Cancelled,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Lease {
     pub worker_id: String,
     pub attempts: usize,
