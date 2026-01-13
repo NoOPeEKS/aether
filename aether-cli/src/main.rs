@@ -2,7 +2,7 @@ mod commands;
 mod task;
 
 use aether_broker::DefaultBroker;
-use aether_core::broker::storage::InMemoryStorage;
+use aether_core::broker::storage::{InMemoryStorage, RedisStorage};
 use aether_core::capabilities::WorkerCapabilities;
 use aether_core::http::CreateTaskResponse;
 use aether_core::traits::Broker;
@@ -24,16 +24,32 @@ async fn main() {
             BrokerCommands::Start {
                 api_port,
                 jrpc_port,
+                redis_ip,
+                redis_port,
             } => {
                 info!(
                     "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
                 );
-                let storage = InMemoryStorage::new();
-                let broker = DefaultBroker::new(storage);
-                broker
-                    .run(api_port, jrpc_port)
-                    .await
-                    .expect("Broker should run");
+
+                if let Some(redis_ip) = redis_ip
+                    && let Some(redis_port) = redis_port
+                {
+                    let storage = RedisStorage::new(&redis_ip, redis_port)
+                        .await
+                        .expect("RedisStorage should have been created.");
+                    let broker = DefaultBroker::new(storage);
+                    broker
+                        .run(api_port, jrpc_port)
+                        .await
+                        .expect("Broker should run");
+                } else {
+                    let storage = InMemoryStorage::new();
+                    let broker = DefaultBroker::new(storage);
+                    broker
+                        .run(api_port, jrpc_port)
+                        .await
+                        .expect("Broker should run");
+                }
             }
         },
         Commands::Worker { command } => match command {

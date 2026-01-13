@@ -220,11 +220,11 @@ impl Storage for RedisStorage {
                     let result_key = format!("task_results:{}", task.id);
                     let result = TaskResult {
                         id: task.id,
-                        name: task.name,
-                        code_b64: task.code_b64,
+                        name: task.name.clone(),
+                        code_b64: task.code_b64.clone(),
                         result: None,
                         status: TaskStatus::Queued,
-                        capabilities: task.capabilities,
+                        capabilities: task.capabilities.clone(),
                     };
                     // TODO: Check this unwrap.
                     let result_json = serde_json::to_string(&result).unwrap();
@@ -244,6 +244,7 @@ impl Storage for RedisStorage {
                         Ok(_) => {}
                         Err(_) => continue,
                     }
+                    return Some(task);
                 }
             }
         }
