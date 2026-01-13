@@ -27,16 +27,22 @@ pub async fn create_task_handler<S: Storage>(
         capabilities: task.capabilities,
     };
 
-    // TODO: Handle non able to enqueue correctly.
-    state.storage.enqueue_task(new_task).await;
-
-    (
-        StatusCode::CREATED,
-        Json(CreateTaskResponse {
-            task_id: id,
-            status: TaskStatus::Queued,
-        }),
-    )
+    if state.storage.enqueue_task(new_task).await.is_ok() {
+        (
+            StatusCode::CREATED,
+            Json(CreateTaskResponse::Ok {
+                task_id: id,
+                status: TaskStatus::Queued,
+            }),
+        )
+    } else {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CreateTaskResponse::Error {
+                message: String::from("Could not create task successfully."),
+            }),
+        )
+    }
 }
 
 pub async fn get_task_handler<S: Storage>(

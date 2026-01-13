@@ -48,6 +48,12 @@ pub enum BrokerCommands {
 
         #[arg(long)]
         jrpc_port: usize,
+
+        #[arg(long, requires = "redis_port")]
+        redis_ip: Option<String>,
+
+        #[arg(long, requires = "redis_ip")]
+        redis_port: Option<usize>,
     },
 }
 

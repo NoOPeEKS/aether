@@ -13,9 +13,9 @@ pub struct CreateTaskRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateTaskResponse {
-    pub task_id: Uuid,
-    pub status: TaskStatus,
+pub enum CreateTaskResponse {
+    Ok { task_id: Uuid, status: TaskStatus },
+    Error { message: String },
 }
 
 #[derive(Serialize, Deserialize)]

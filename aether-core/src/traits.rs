@@ -15,7 +15,7 @@ pub trait Broker: Send + Sync {
 #[async_trait::async_trait]
 pub trait Storage: Send + Sync + 'static {
     /// Insert a new task into the appropriate priority queue.
-    async fn enqueue_task(&self, task: Task);
+    async fn enqueue_task(&self, task: Task) -> anyhow::Result<()>;
 
     /// Pop a task from queues in priority order and create a lease for worker_id.
     /// Returns the task id if a task was leased.

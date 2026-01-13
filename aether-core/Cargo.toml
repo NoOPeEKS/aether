@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+redis = { version = "1.0.2", features = ["tokio-comp", "uuid"]}
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
