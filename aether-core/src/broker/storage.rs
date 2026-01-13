@@ -2,8 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use redis::AsyncTypedCommands;
-use redis::RedisError;
+use redis::{AsyncTypedCommands, RedisError};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
