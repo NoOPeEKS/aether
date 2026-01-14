@@ -1,3 +1,6 @@
+use std::time::SystemTime;
+
+use aether_core::broker::storage::{WorkerInfo, WorkerSession};
 use aether_core::jrpc::{
     JsonRpcError, JsonRpcErrorCode, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     format_jrpc_message,
@@ -5,10 +8,10 @@ use aether_core::jrpc::{
 use aether_core::task::{Task, TaskPriority, TaskResult, TaskStatus};
 use aether_core::traits::Storage;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::jrpc::params::*;
-use crate::state::{BrokerState, WorkerInfo, WorkerSession};
+use crate::state::BrokerState;
 
 const MAX_ATTEMPTS: usize = 5;
 
@@ -103,21 +106,23 @@ async fn register_worker<S: Storage>(
     worker_sender: UnboundedSender<String>,
 ) -> anyhow::Result<JsonRpcResponse> {
     let register_req: RegisterWorkerRequestParams = serde_json::from_value(request.params)?;
-    let mut workers = state.worker_registry.write().await;
-    let mut sessions = state.worker_sessions.write().await;
-
-    match workers.get_mut(&register_req.worker_id) {
-        // Worker already existed, recreate session.
-        Some(winfo) => {
+    match state
+        .storage
+        .get_worker_from_registry(&register_req.worker_id)
+        .await
+    {
+        // Worker already existed, update winfo and recreate session.
+        Some(mut winfo) => {
             info!("[INFO] Worker {} reconnected", &register_req.worker_id);
-            let now = tokio::time::Instant::now();
+            let now = SystemTime::now();
             winfo.last_heartbeat = now;
             winfo.active = true;
-            sessions.insert(
+            state.storage.insert_worker_info_to_registry(winfo).await?;
+            state.worker_sessions.write().await.insert(
                 register_req.worker_id.clone(),
                 WorkerSession {
                     sender: worker_sender,
-                    connected_at: now,
+                    connected_at: tokio::time::Instant::now(),
                 },
             );
             Ok(JsonRpcResponse {
@@ -129,23 +134,21 @@ async fn register_worker<S: Storage>(
                 error: None,
             })
         }
-        // New worker, create both register and session.
+        // New worker, create both winfo register and session.
         None => {
             info!(
                 "[INFO] Registering new worker with id = {}",
                 &register_req.worker_id
             );
-            workers.insert(
+            let winfo = WorkerInfo {
+                worker_id: register_req.worker_id.clone(),
+                last_heartbeat: SystemTime::now(),
+                active: true,
+                capabilities: register_req.capabilities,
+            };
+            state.storage.insert_worker_info_to_registry(winfo).await?;
+            state.worker_sessions.write().await.insert(
                 register_req.worker_id.clone(),
-                WorkerInfo {
-                    worker_id: register_req.worker_id.clone(),
-                    last_heartbeat: tokio::time::Instant::now(),
-                    active: true,
-                    capabilities: register_req.capabilities,
-                },
-            );
-            sessions.insert(
-                register_req.worker_id,
                 WorkerSession {
                     sender: worker_sender,
                     connected_at: tokio::time::Instant::now(),
@@ -191,13 +194,16 @@ async fn fetch_task_for_worker<S: Storage>(
         })
     };
 
-    let workers = state.worker_registry.read().await;
-    if !workers.contains_key(&req_params.worker_id) {
+    if !state.storage.exists_worker(&req_params.worker_id).await {
         info!("[INFO] Could not fetch task from a non-registered worker.");
         return error_response("Cannot fetch task from non-registered worker.");
     }
 
-    if let Some(winfo) = workers.get(&req_params.worker_id) {
+    if let Some(winfo) = state
+        .storage
+        .get_worker_from_registry(&req_params.worker_id)
+        .await
+    {
         if !winfo.active {
             info!("[INFO] Could not fetch task from an inactive worker.");
             return error_response("Cannot fetch task from an inactive worker");
@@ -221,21 +227,27 @@ async fn process_heartbeat<S: Storage>(state: &BrokerState<S>, notification: Jso
     if let Ok(heartbeat_params) =
         serde_json::from_value::<HeartbeatNotificationParams>(notification.params)
         && state
-            .worker_registry
-            .read()
+            .storage
+            .exists_worker(&heartbeat_params.worker_id)
             .await
-            .contains_key(&heartbeat_params.worker_id)
-        && let Some(worker_info) = state
-            .worker_registry
-            .write()
+        && let Some(mut worker_info) = state
+            .storage
+            .get_worker_from_registry(&heartbeat_params.worker_id)
             .await
-            .get_mut(&heartbeat_params.worker_id)
     {
         info!(
             "[INFO] Heartbeat notification received from ID = {}",
             &worker_info.worker_id
         );
-        worker_info.last_heartbeat = tokio::time::Instant::now();
+        let wid = worker_info.worker_id.clone();
+        worker_info.last_heartbeat = SystemTime::now();
+        if let Err(err) = state
+            .storage
+            .insert_worker_info_to_registry(worker_info)
+            .await
+        {
+            error!("[ERROR] Could not update heartbeat status for {wid}: {err}");
+        }
     }
 }
 
@@ -262,7 +274,7 @@ async fn handle_report_result<S: Storage>(
                     .await?;
 
                 if too_many_attempts
-                    && let Some(_) = state.worker_registry.read().await.get(&worker_id)
+                    && let Some(_) = state.storage.get_worker_from_registry(&worker_id).await
                     && let Some(session) = state.worker_sessions.read().await.get(&worker_id)
                 {
                     let notif = JsonRpcNotification {
@@ -305,9 +317,12 @@ async fn handle_worker_shutdown<S: Storage>(
             return;
         }
 
-        let mut worker_registry = state.worker_registry.write().await;
-
-        if worker_registry.remove(&notif_params.worker_id).is_none() {
+        if state
+            .storage
+            .remove_worker_from_registry(&notif_params.worker_id)
+            .await
+            .is_none()
+        {
             // We return early and do nothing because it's supposed to have a WorkerInfo
             // registered to be able to send shutdown.
             warn!(

@@ -42,11 +42,25 @@ async fn handle_heartbeats<S: Storage>(state: Arc<BrokerState<S>>) {
     let mut interval = tokio::time::interval(CHECK_INTERVAL);
     loop {
         interval.tick().await;
-        let now = tokio::time::Instant::now();
-        let mut workers = state.worker_registry.write().await;
+        let now = SystemTime::now();
+        let mut workers = state.storage.get_worker_registry().await;
         for (_, winfo) in workers.iter_mut() {
-            if now.duration_since(winfo.last_heartbeat) > HEARTBEAT_TIMEOUT {
+            if now
+                .duration_since(winfo.last_heartbeat)
+                .unwrap_or(Duration::ZERO)
+                > HEARTBEAT_TIMEOUT
+            {
                 winfo.active = false;
+                if let Err(err) = state
+                    .storage
+                    .insert_worker_info_to_registry(winfo.clone())
+                    .await
+                {
+                    error!(
+                        "[ERROR] Could not change status of worker {} to inactive due to not receiving heartbeats: {err}",
+                        winfo.worker_id
+                    );
+                }
             }
         }
     }
