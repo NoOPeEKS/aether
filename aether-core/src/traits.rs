@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
+use crate::broker::storage::WorkerInfo;
 use crate::capabilities::WorkerCapabilities;
 use crate::task::{Lease, Task, TaskResult};
 
@@ -48,4 +49,14 @@ pub trait Storage: Send + Sync + 'static {
         task_id: &Uuid,
         max_attempts: usize,
     ) -> anyhow::Result<(bool, String)>;
+
+    async fn insert_worker_info_to_registry(&self, worker: WorkerInfo) -> anyhow::Result<()>;
+
+    async fn exists_worker(&self, worker_id: &str) -> bool;
+
+    async fn get_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo>;
+
+    async fn get_worker_registry(&self) -> HashMap<String, WorkerInfo>;
+
+    async fn remove_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo>;
 }

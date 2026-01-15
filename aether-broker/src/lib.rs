@@ -55,7 +55,6 @@ where
         Self {
             state: Arc::new(BrokerState {
                 storage,
-                worker_registry: RwLock::new(HashMap::new()),
                 worker_sessions: RwLock::new(HashMap::new()),
             }),
         }

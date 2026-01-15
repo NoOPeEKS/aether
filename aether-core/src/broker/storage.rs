@@ -3,12 +3,27 @@ use std::str::FromStr;
 use std::time::SystemTime;
 
 use redis::{AsyncTypedCommands, RedisError};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::capabilities::WorkerCapabilities;
 use crate::task::{Lease, Task, TaskPriority, TaskResult, TaskStatus};
 use crate::traits::Storage;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkerInfo {
+    pub worker_id: String,
+    pub last_heartbeat: SystemTime,
+    pub active: bool,
+    pub capabilities: WorkerCapabilities,
+}
+
+#[derive(Clone, Debug)]
+pub struct WorkerSession {
+    pub sender: tokio::sync::mpsc::UnboundedSender<String>,
+    pub connected_at: tokio::time::Instant,
+}
 
 #[derive(Default)]
 pub struct InMemoryStorage {
@@ -17,6 +32,8 @@ pub struct InMemoryStorage {
     pub low_prio: RwLock<VecDeque<Task>>,
     pub results: RwLock<HashMap<Uuid, TaskResult>>,
     pub leases: RwLock<HashMap<Uuid, Lease>>,
+    pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
+    pub worker_sessions: RwLock<HashMap<String, WorkerSession>>,
 }
 
 async fn pop_compatible(
@@ -152,6 +169,37 @@ impl Storage for InMemoryStorage {
     async fn get_all_leases(&self) -> HashMap<Uuid, Lease> {
         self.leases.read().await.clone()
     }
+
+    async fn insert_worker_info_to_registry(&self, worker: WorkerInfo) -> anyhow::Result<()> {
+        self.worker_registry
+            .write()
+            .await
+            .insert(worker.worker_id.clone(), worker)
+            .ok_or(anyhow::anyhow!(
+                "Error occured during insertion of worker info to registry"
+            ))?;
+        Ok(())
+    }
+
+    async fn get_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo> {
+        self.worker_registry.read().await.get(worker_id).cloned()
+    }
+
+    async fn get_worker_registry(&self) -> HashMap<String, WorkerInfo> {
+        self.worker_registry.read().await.clone()
+    }
+
+    async fn exists_worker(&self, worker_id: &str) -> bool {
+        self.worker_registry
+            .read()
+            .await
+            .iter()
+            .any(|(wid, _)| wid == worker_id)
+    }
+
+    async fn remove_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo> {
+        self.worker_registry.write().await.remove(worker_id)
+    }
 }
 
 impl InMemoryStorage {
@@ -253,10 +301,11 @@ impl Storage for RedisStorage {
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
         let mut conn = self.connection.clone();
         let lease_key = format!("leases:{task_id}");
-        if let Ok(Some(lease)) = conn.get(lease_key).await {
-            if let Ok(lease) = serde_json::from_str::<Lease>(&lease) {
-                return Some(lease);
-            }
+        if let Ok(Some(lease)) = conn.get(&lease_key).await {
+            if let Ok(lease) = serde_json::from_str::<Lease>(&lease)
+                && let Ok(_) = conn.del(&lease_key).await {
+                    return Some(lease);
+                }
             return None;
         }
         None
@@ -370,5 +419,62 @@ impl Storage for RedisStorage {
         } else {
             anyhow::bail!("lease did not exist in storage");
         }
+    }
+
+    async fn insert_worker_info_to_registry(&self, worker: WorkerInfo) -> anyhow::Result<()> {
+        let mut conn = self.connection.clone();
+        let wid = worker.worker_id.clone();
+        let registry_key = format!("worker_registry:{wid}");
+        conn.set(registry_key, serde_json::to_string(&worker)?)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo> {
+        let mut conn = self.connection.clone();
+        let registry_key = format!("worker_registry:{worker_id}");
+        if let Ok(Some(winfo_json)) = conn.get(&registry_key).await {
+            if let Ok(winfo) = serde_json::from_str::<WorkerInfo>(&winfo_json) {
+                return Some(winfo);
+            } else {
+                return None;
+            }
+        }
+        None
+    }
+
+    async fn get_worker_registry(&self) -> HashMap<String, WorkerInfo> {
+        let mut conn = self.connection.clone();
+        let mut worker_registry: HashMap<String, WorkerInfo> = HashMap::new();
+        if let Ok(keys) = conn.keys("worker_registry:*").await {
+            for key in keys {
+                if let Some(wid) = key.strip_prefix("worker_registry:")
+                    && let Ok(Some(winfo_json)) = conn.get(wid).await
+                    && let Ok(winfo) = serde_json::from_str::<WorkerInfo>(&winfo_json)
+                {
+                    worker_registry.insert(wid.to_string(), winfo);
+                }
+            }
+        }
+        worker_registry
+    }
+
+    async fn exists_worker(&self, worker_id: &str) -> bool {
+        let mut conn = self.connection.clone();
+        let registry_key = format!("worker_registry:{worker_id}");
+        conn.exists(registry_key).await.unwrap_or(false)
+    }
+
+    async fn remove_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo> {
+        let mut conn = self.connection.clone();
+        let registry_key = format!("worker_registry:{worker_id}");
+        if let Some(winfo) = self.get_worker_from_registry(worker_id).await {
+            let del_res = conn.del(registry_key).await;
+            if del_res.is_err() {
+                return None;
+            }
+            return Some(winfo);
+        }
+        None
     }
 }
