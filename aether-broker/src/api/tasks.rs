@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use aether_core::http::{
-    CreateTaskRequest, CreateTaskResponse, GetAllTasksResponse, GetTaskResponse,
+    CancelTaskResponse, CreateTaskRequest, CreateTaskResponse, GetAllTasksResponse, GetTaskResponse,
 };
+use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use aether_core::task::{Task, TaskStatus};
 use aether_core::traits::Storage;
 use axum::Json;
@@ -11,6 +12,7 @@ use axum::http::StatusCode;
 use tracing::info;
 use uuid::Uuid;
 
+use crate::jrpc::params::StopExecutionNotificationParams;
 use crate::state::BrokerState;
 
 pub async fn create_task_handler<S: Storage>(
@@ -109,5 +111,83 @@ pub async fn get_all_tasks_handler<S: Storage>(
         )
     } else {
         (StatusCode::OK, Json(GetAllTasksResponse { tasks: None }))
+    }
+}
+
+fn format_cancel_response(
+    status_code: StatusCode,
+    message: &str,
+) -> (StatusCode, Json<CancelTaskResponse>) {
+    (
+        status_code,
+        Json(CancelTaskResponse {
+            message: message.into(),
+        }),
+    )
+}
+
+pub async fn cancel_task_handler<S: Storage>(
+    State(state): State<Arc<BrokerState<S>>>,
+    Path(task_id): Path<Uuid>,
+) -> (StatusCode, Json<CancelTaskResponse>) {
+    match serde_json::to_value(StopExecutionNotificationParams { task_id }) {
+        Ok(stop_exec_params) => {
+            if let Some(tr) = state.storage.get_task_result(task_id).await {
+                match tr.status {
+                    TaskStatus::Completed => {
+                        return format_cancel_response(
+                            StatusCode::CONFLICT,
+                            "Cannot cancel an already completed task.",
+                        );
+                    }
+                    TaskStatus::Cancelled => {
+                        return format_cancel_response(
+                            StatusCode::CONFLICT,
+                            "Task was already cancelled.",
+                        );
+                    }
+                    _ => {
+                        // If its on any state that is not completed or cancelled, means we have a
+                        // lease up and we can know which worker is running it.
+                        let lease = state.storage.get_lease(&task_id).await;
+                        if let Some(lease) = lease
+                            && let Some(wsession) =
+                                state.worker_sessions.read().await.get(&lease.worker_id)
+                        {
+                            let stop_notif = JsonRpcNotification {
+                                jsonrpc: "2.0".into(),
+                                method: "stop_execution".into(),
+                                params: stop_exec_params,
+                            };
+                            if let Ok(str_msg) = format_jrpc_message(stop_notif) {
+                                if wsession.sender.send(str_msg).is_ok() {
+                                    return format_cancel_response(
+                                        StatusCode::OK,
+                                        format!("Task {task_id} cancelled successfully.").as_ref(),
+                                    );
+                                }
+                                return format_cancel_response(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "Failed to send stop_execution_notification",
+                                );
+                            }
+                            return format_cancel_response(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Could not serialize stop execution notification",
+                            );
+                        }
+                        return format_cancel_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Could not retrieve the task lease.",
+                        );
+                    }
+                }
+            }
+            format_cancel_response(StatusCode::NOT_FOUND, "The solicited task does not exist.")
+        }
+        Err(_) => format_cancel_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Could not serialize stop execution params correctly",
+        ),
     }
 }

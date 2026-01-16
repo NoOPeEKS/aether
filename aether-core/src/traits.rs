@@ -23,6 +23,8 @@ pub trait Storage: Send + Sync + 'static {
     async fn dequeue_task(&self, worker_id: &str, worker_caps: &WorkerCapabilities)
     -> Option<Task>;
 
+    async fn get_lease(&self, task_id: &Uuid) -> Option<Lease>;
+
     /// Remove the lease for task id (worker finished or lost).
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease>;
 

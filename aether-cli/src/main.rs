@@ -11,7 +11,7 @@ use clap::Parser;
 use tracing::info;
 
 use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
-use crate::task::{check_task, list_tasks, parse_task_file, send_task_to_broker};
+use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
 async fn main() {
@@ -121,10 +121,15 @@ async fn main() {
                 }
             }
             TaskCommands::Stop {
-                broker_ip: _,
-                broker_api_port: _,
-                task_id: _,
-            } => {}
+                broker_ip,
+                broker_api_port,
+                task_id,
+            } => match cancel_task(&broker_ip, broker_api_port, &task_id).await {
+                Ok(resp) => {
+                    println!("{}", resp.message);
+                },
+                Err(err) => eprintln!("ERROR: {err}"),
+            }
             TaskCommands::Check {
                 broker_ip,
                 broker_api_port,
