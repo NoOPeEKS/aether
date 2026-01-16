@@ -122,6 +122,13 @@ pub enum TaskCommands {
         #[arg(long)]
         task_id: String,
     },
+    List {
+        #[arg(long)]
+        broker_ip: String,
+
+        #[arg(long)]
+        broker_api_port: usize,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

@@ -11,7 +11,7 @@ use clap::Parser;
 use tracing::info;
 
 use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
-use crate::task::{check_task, parse_task_file, send_task_to_broker};
+use crate::task::{check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
 async fn main() {
@@ -138,6 +138,17 @@ async fn main() {
                             .expect("Failed deserialization of task.");
                         println!("{de_task}");
                     }
+                }
+                Err(err) => eprintln!("ERROR: {err}"),
+            },
+            TaskCommands::List {
+                broker_ip,
+                broker_api_port,
+            } => match list_tasks(&broker_ip, broker_api_port).await {
+                Ok(resp) => {
+                    let de_tasks = serde_json::to_string_pretty(&resp)
+                        .expect("Failed deserialization of all tasks");
+                    println!("{de_tasks}");
                 }
                 Err(err) => eprintln!("ERROR: {err}"),
             },

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use aether_core::capabilities::CPUArchitecture;
-use aether_core::http::{CreateTaskResponse, GetTaskResponse};
+use aether_core::http::{CreateTaskResponse, GetAllTasksResponse, GetTaskResponse};
 use aether_core::task::TaskPriority;
 use base64::prelude::*;
 use reqwest::StatusCode;
@@ -72,6 +72,17 @@ pub async fn check_task(
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}");
     let response = client.get(broker_addr).send().await?;
     let resp_body = response.json::<GetTaskResponse>().await?;
+    Ok(resp_body)
+}
+
+pub async fn list_tasks(
+    broker_ip: &str,
+    broker_api_port: usize,
+) -> anyhow::Result<GetAllTasksResponse> {
+    let client = reqwest::Client::new();
+    let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks");
+    let response = client.get(broker_addr).send().await?;
+    let resp_body = response.json::<GetAllTasksResponse>().await?;
     Ok(resp_body)
 }
 
