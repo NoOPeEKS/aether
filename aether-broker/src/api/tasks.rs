@@ -53,22 +53,7 @@ pub async fn get_task_handler<S: Storage>(
 ) -> (StatusCode, Json<GetTaskResponse>) {
     if let Some(task) = state.storage.get_task_result(task_id).await {
         match task.status {
-            TaskStatus::Completed => (
-                StatusCode::OK,
-                Json(GetTaskResponse {
-                    task: Some(task),
-                    error: None,
-                }),
-            ),
-            TaskStatus::Queued => (
-                StatusCode::OK,
-                Json(GetTaskResponse {
-                    task: Some(task),
-                    error: None,
-                }),
-            ),
-
-            TaskStatus::Running => (
+            TaskStatus::Completed | TaskStatus::Queued | TaskStatus::Running => (
                 StatusCode::OK,
                 Json(GetTaskResponse {
                     task: Some(task),
@@ -142,7 +127,7 @@ pub async fn cancel_task_handler<S: Storage>(
                     }
                     TaskStatus::Cancelled => {
                         return format_cancel_response(
-                            StatusCode::CONFLICT,
+                            StatusCode::OK,
                             "Task was already cancelled.",
                         );
                     }
