@@ -31,3 +31,8 @@ pub struct GetTaskResponse {
 pub struct GetAllTasksResponse {
     pub tasks: Option<Vec<TaskResult>>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct CancelTaskResponse {
+    pub message: String,
+}

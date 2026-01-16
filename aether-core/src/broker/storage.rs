@@ -107,6 +107,10 @@ impl Storage for InMemoryStorage {
         }
     }
 
+    async fn get_lease(&self, task_id: &Uuid) -> Option<Lease> {
+        self.leases.read().await.get(task_id).cloned()
+    }
+
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
         self.leases.write().await.remove(task_id)
     }
@@ -298,14 +302,26 @@ impl Storage for RedisStorage {
         None
     }
 
+    async fn get_lease(&self, task_id: &Uuid) -> Option<Lease> {
+        let mut conn = self.connection.clone();
+        let lease_key = format!("leases:{task_id}");
+        if let Ok(Some(lease)) = conn.get(lease_key).await
+            && let Ok(lease) = serde_json::from_str::<Lease>(&lease)
+        {
+            return Some(lease);
+        }
+        None
+    }
+
     async fn remove_lease(&self, task_id: &Uuid) -> Option<Lease> {
         let mut conn = self.connection.clone();
         let lease_key = format!("leases:{task_id}");
         if let Ok(Some(lease)) = conn.get(&lease_key).await {
             if let Ok(lease) = serde_json::from_str::<Lease>(&lease)
-                && let Ok(_) = conn.del(&lease_key).await {
-                    return Some(lease);
-                }
+                && let Ok(_) = conn.del(&lease_key).await
+            {
+                return Some(lease);
+            }
             return None;
         }
         None
