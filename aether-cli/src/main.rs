@@ -127,9 +127,9 @@ async fn main() {
             } => match cancel_task(&broker_ip, broker_api_port, &task_id).await {
                 Ok(resp) => {
                     println!("{}", resp.message);
-                },
+                }
                 Err(err) => eprintln!("ERROR: {err}"),
-            }
+            },
             TaskCommands::Check {
                 broker_ip,
                 broker_api_port,
