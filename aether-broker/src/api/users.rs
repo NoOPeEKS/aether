@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use aether_core::auth::User;
+use aether_core::auth::{Permission, User};
 use aether_core::http::CreateUserRequest;
 use aether_core::traits::Storage;
+use axum::Extension;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use bcrypt::{DEFAULT_COST, hash};
@@ -12,10 +13,15 @@ use crate::state::BrokerState;
 
 pub async fn create_user_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
+    Extension(user): Extension<User>,
     Json(user_info): Json<CreateUserRequest>,
 ) -> StatusCode {
-    // TODO: In the future, protect this endpoint by middleware so that only admins
-    // can create new users.
+    if !user.permissions.contains(&Permission::CreateUser)
+        && !user.permissions.contains(&Permission::All)
+        && !user.is_admin
+    {
+        return StatusCode::UNAUTHORIZED;
+    }
     if let Ok(pass_hash) = hash(user_info.password, DEFAULT_COST) {
         let user = User {
             id: Uuid::new_v4(),
