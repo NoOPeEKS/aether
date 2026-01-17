@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
+use aether_core::auth::{Permission, User};
 use aether_core::http::{
     CancelTaskResponse, CreateTaskRequest, CreateTaskResponse, GetAllTasksResponse, GetTaskResponse,
 };
 use aether_core::jrpc::{JsonRpcNotification, format_jrpc_message};
 use aether_core::task::{Task, TaskStatus};
 use aether_core::traits::Storage;
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::{Extension, Json};
 use tracing::info;
 use uuid::Uuid;
 
@@ -16,10 +18,18 @@ use crate::jrpc::params::StopExecutionNotificationParams;
 use crate::state::BrokerState;
 
 pub async fn create_task_handler<S: Storage>(
+    Extension(user): Extension<User>,
     State(state): State<Arc<BrokerState<S>>>,
     Json(task): Json<CreateTaskRequest>,
-) -> (StatusCode, Json<CreateTaskResponse>) {
+) -> impl IntoResponse {
     info!("[INFO] A task has been requested at the POST /tasks");
+
+    if !user.is_admin
+        && !user.permissions.contains(&Permission::CreateTask)
+        && !user.permissions.contains(&Permission::All)
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     let id = Uuid::new_v4();
     let new_task = Task {
         id,
@@ -37,6 +47,7 @@ pub async fn create_task_handler<S: Storage>(
                 status: TaskStatus::Queued,
             }),
         )
+            .into_response()
     } else {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -44,13 +55,14 @@ pub async fn create_task_handler<S: Storage>(
                 message: String::from("Could not create task successfully."),
             }),
         )
+            .into_response()
     }
 }
 
 pub async fn get_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
     Path(task_id): Path<Uuid>,
-) -> (StatusCode, Json<GetTaskResponse>) {
+) -> impl IntoResponse {
     if let Some(task) = state.storage.get_task_result(task_id).await {
         match task.status {
             TaskStatus::Completed | TaskStatus::Queued | TaskStatus::Running => (
@@ -88,7 +100,7 @@ pub async fn get_task_handler<S: Storage>(
 
 pub async fn get_all_tasks_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
-) -> (StatusCode, Json<GetAllTasksResponse>) {
+) -> impl IntoResponse {
     if let Some(tasks) = state.storage.get_all_tasks().await {
         (
             StatusCode::OK,
@@ -114,7 +126,7 @@ fn format_cancel_response(
 pub async fn cancel_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
     Path(task_id): Path<Uuid>,
-) -> (StatusCode, Json<CancelTaskResponse>) {
+) -> impl IntoResponse {
     match serde_json::to_value(StopExecutionNotificationParams { task_id }) {
         Ok(stop_exec_params) => {
             if let Some(tr) = state.storage.get_task_result(task_id).await {

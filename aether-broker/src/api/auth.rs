@@ -5,6 +5,7 @@ use aether_core::http::{LoginRequest, LoginResponse};
 use aether_core::traits::Storage;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use bcrypt::verify;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
@@ -49,7 +50,7 @@ fn issue_jwt(user: &User, secret: &[u8]) -> anyhow::Result<String> {
 pub async fn login_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
     Json(login_info): Json<LoginRequest>,
-) -> (StatusCode, Json<LoginResponse>) {
+) -> impl IntoResponse {
     match state.storage.get_user(&login_info.username).await {
         Ok(Some(user)) => {
             if !check_user_login(&user, &login_info.password) {
