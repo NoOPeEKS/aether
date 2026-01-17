@@ -87,6 +87,7 @@ impl Storage for InMemoryStorage {
                     id,
                     TaskResult {
                         id,
+                        owner_id: t.owner_id,
                         name: t.name.clone(),
                         code_b64: t.code_b64.clone(),
                         result: None,
@@ -289,6 +290,7 @@ impl Storage for RedisStorage {
                     let result_key = format!("task_results:{}", task.id);
                     let result = TaskResult {
                         id: task.id,
+                        owner_id: task.owner_id,
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: None,

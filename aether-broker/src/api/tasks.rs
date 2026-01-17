@@ -33,6 +33,7 @@ pub async fn create_task_handler<S: Storage>(
     let id = Uuid::new_v4();
     let new_task = Task {
         id,
+        owner_id: user.id,
         name: task.name,
         code_b64: task.code_b64,
         priority: task.priority,

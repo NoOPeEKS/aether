@@ -16,6 +16,7 @@ pub enum Permission {
     CreateUser,
     CreateTask,
     CheckTask,
+    ListTasks,
     CancelTask,
     ViewWorkers,
     All,
