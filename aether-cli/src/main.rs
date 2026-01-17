@@ -35,9 +35,6 @@ async fn main() {
                 info!(
                     "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
                 );
-                warn!(
-                    "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
-                );
                 let admin_user = User {
                     id: Uuid::new_v4(),
                     name: "admin".into(),
@@ -52,10 +49,18 @@ async fn main() {
                     let storage = RedisStorage::new(&redis_ip, redis_port)
                         .await
                         .expect("RedisStorage should have been created.");
-                    storage
-                        .create_user(admin_user)
-                        .await
-                        .expect("To be able to create admin user.");
+                    match storage.create_user(admin_user).await {
+                        Ok(_) => {
+                            warn!(
+                                "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+                            );
+                        }
+                        Err(err) => {
+                            if err.to_string() != "User already exists!" {
+                                panic!("ERROR: {err}");
+                            }
+                        }
+                    }
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
