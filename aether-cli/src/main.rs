@@ -5,7 +5,7 @@ mod task;
 use aether_broker::DefaultBroker;
 use aether_core::broker::storage::{InMemoryStorage, RedisStorage};
 use aether_core::capabilities::WorkerCapabilities;
-use aether_core::http::CreateTaskResponse;
+use aether_core::http::{CreateTaskResponse, LoginResponse};
 use aether_core::traits::Broker;
 use aether_worker::Worker;
 use clap::Parser;
@@ -167,7 +167,10 @@ async fn main() {
                 username,
                 password,
             } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
-                Ok(resp) => println!("{}", resp.jwt),
+                Ok(resp) => match resp {
+                    LoginResponse::Ok { jwt } => println!("{jwt}"),
+                    LoginResponse::Err { message } => eprintln!("ERROR: {message}"),
+                },
                 Err(err) => eprintln!("ERROR: {err}"),
             },
         },

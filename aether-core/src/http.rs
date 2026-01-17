@@ -44,6 +44,7 @@ pub struct LoginRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub jwt: String,
+pub enum LoginResponse {
+    Ok { jwt: String },
+    Err { message: String },
 }

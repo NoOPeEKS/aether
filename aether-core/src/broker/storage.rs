@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::auth::User;
 use crate::capabilities::WorkerCapabilities;
 use crate::task::{Lease, Task, TaskPriority, TaskResult, TaskStatus};
 use crate::traits::Storage;
@@ -34,6 +35,7 @@ pub struct InMemoryStorage {
     pub leases: RwLock<HashMap<Uuid, Lease>>,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
     pub worker_sessions: RwLock<HashMap<String, WorkerSession>>,
+    pub users: RwLock<Vec<User>>,
 }
 
 async fn pop_compatible(
@@ -203,6 +205,22 @@ impl Storage for InMemoryStorage {
 
     async fn remove_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo> {
         self.worker_registry.write().await.remove(worker_id)
+    }
+
+    async fn create_user(&self, user: User) -> anyhow::Result<()> {
+        self.users.write().await.push(user);
+        Ok(())
+    }
+
+    async fn get_user(&self, username: &str) -> anyhow::Result<Option<User>> {
+        let user = self
+            .users
+            .read()
+            .await
+            .iter()
+            .find(|user| user.name == username)
+            .cloned();
+        Ok(user)
     }
 }
 
@@ -492,5 +510,22 @@ impl Storage for RedisStorage {
             return Some(winfo);
         }
         None
+    }
+
+    async fn create_user(&self, user: User) -> anyhow::Result<()> {
+        let mut conn = self.connection.clone();
+        let users_key = format!("users:{}", user.id);
+        conn.set(users_key, serde_json::to_string(&user)?).await?;
+        Ok(())
+    }
+
+    async fn get_user(&self, username: &str) -> anyhow::Result<Option<User>> {
+        let mut conn = self.connection.clone();
+        let user_key = format!("users:{username}");
+        if let Ok(Some(user_str)) = conn.get(user_key).await {
+            let user: User = serde_json::from_str(&user_str)?;
+            return Ok(Some(user));
+        }
+        Ok(None)
     }
 }
