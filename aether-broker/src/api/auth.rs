@@ -1,4 +1,5 @@
-use crate::state::BrokerState;
+use std::sync::Arc;
+
 use aether_core::auth::{JWTClaims, User};
 use aether_core::http::{LoginRequest, LoginResponse};
 use aether_core::traits::Storage;
@@ -7,7 +8,8 @@ use axum::http::StatusCode;
 use bcrypt::verify;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header};
-use std::sync::Arc;
+
+use crate::state::BrokerState;
 
 fn check_user_login(user: &User, password: &str) -> bool {
     verify(password, &user.password_hash).unwrap_or(false)

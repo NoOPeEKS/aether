@@ -1,16 +1,16 @@
+pub mod auth;
 pub mod health;
 pub mod tasks;
-pub mod auth;
 pub mod users;
 
 use std::sync::Arc;
 
 use aether_core::traits::Storage;
+use auth::login_handler;
 use axum::Router;
 use axum::routing::{get, post};
 use health::health_handler;
 use tasks::{cancel_task_handler, create_task_handler, get_all_tasks_handler, get_task_handler};
-use auth::login_handler;
 use users::create_user_handler;
 
 use crate::state::BrokerState;

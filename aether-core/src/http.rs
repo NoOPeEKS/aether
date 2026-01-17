@@ -54,5 +54,5 @@ pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub is_admin: bool,
-    pub permissions: Vec<String>
+    pub permissions: Vec<String>,
 }

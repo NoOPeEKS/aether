@@ -1,12 +1,14 @@
-use crate::state::BrokerState;
+use std::sync::Arc;
+
 use aether_core::auth::User;
 use aether_core::http::CreateUserRequest;
 use aether_core::traits::Storage;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use bcrypt::{DEFAULT_COST, hash};
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::state::BrokerState;
 
 pub async fn create_user_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
