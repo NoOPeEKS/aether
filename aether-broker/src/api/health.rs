@@ -1,7 +1,8 @@
 use axum::Json;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde_json::json;
 
-pub async fn health_handler() -> (StatusCode, Json<serde_json::Value>) {
+pub async fn health_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({"status": "healthy"})))
 }

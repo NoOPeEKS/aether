@@ -6,6 +6,7 @@ use aether_core::traits::Storage;
 use axum::Extension;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use bcrypt::{DEFAULT_COST, hash};
 use uuid::Uuid;
 
@@ -15,7 +16,7 @@ pub async fn create_user_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
     Extension(user): Extension<User>,
     Json(user_info): Json<CreateUserRequest>,
-) -> StatusCode {
+) -> impl IntoResponse {
     if !user.permissions.contains(&Permission::CreateUser)
         && !user.permissions.contains(&Permission::All)
         && !user.is_admin
