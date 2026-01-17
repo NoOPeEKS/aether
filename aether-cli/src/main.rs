@@ -11,7 +11,7 @@ use aether_core::traits::{Broker, Storage};
 use aether_worker::Worker;
 use bcrypt::{DEFAULT_COST, hash};
 use clap::Parser;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::auth::get_login_jwt;
@@ -34,6 +34,9 @@ async fn main() {
             } => {
                 info!(
                     "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
+                );
+                warn!(
+                    "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
                 );
                 let admin_user = User {
                     id: Uuid::new_v4(),
