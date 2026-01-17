@@ -7,12 +7,21 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use bcrypt::verify;
 use chrono::{Duration, Utc};
-use jsonwebtoken::{EncodingKey, Header};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
 
 use crate::state::BrokerState;
 
 fn check_user_login(user: &User, password: &str) -> bool {
     verify(password, &user.password_hash).unwrap_or(false)
+}
+
+pub fn verify_jwt(token: &str, secret: &[u8]) -> anyhow::Result<JWTClaims> {
+    let data = jsonwebtoken::decode::<JWTClaims>(
+        token,
+        &DecodingKey::from_secret(secret),
+        &Validation::default(),
+    )?;
+    Ok(data.claims)
 }
 
 fn issue_jwt(user: &User, secret: &[u8]) -> anyhow::Result<String> {
