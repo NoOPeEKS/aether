@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod broker;
 pub mod capabilities;
 pub mod http;

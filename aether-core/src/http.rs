@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::auth::Permission;
 use crate::capabilities::TaskCapabilities;
 use crate::task::{TaskPriority, TaskResult, TaskStatus};
 
@@ -35,4 +36,24 @@ pub struct GetAllTasksResponse {
 #[derive(Serialize, Deserialize)]
 pub struct CancelTaskResponse {
     pub message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum LoginResponse {
+    Ok { jwt: String },
+    Err { message: String },
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub password: String,
+    pub is_admin: bool,
+    pub permissions: Vec<Permission>,
 }

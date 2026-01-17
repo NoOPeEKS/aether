@@ -50,6 +50,7 @@ pub async fn executor_loop(
 
                 let updated_task_status = TaskResult {
                     id: task.id,
+                    owner_id: task.owner_id,
                     name: task.name.clone(),
                     code_b64: task.code_b64.clone(),
                     result: None,
@@ -103,6 +104,7 @@ async fn execute_task_select(
         Err(_) => {
             let task_result = TaskResult {
                 id: task.id,
+                owner_id: task.owner_id,
                 name: task.name.clone(),
                 code_b64: task.code_b64.clone(),
                 result: None,
@@ -133,6 +135,7 @@ async fn execute_task_select(
                 if status.success() {
                     let task_result = TaskResult {
                         id: task.id,
+                        owner_id: task.owner_id,
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
@@ -154,6 +157,7 @@ async fn execute_task_select(
 
                     let task_result = TaskResult {
                         id: task.id,
+                        owner_id: task.id,
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
@@ -268,6 +272,7 @@ async fn handle_cancellation(
     state.running_tasks.write().await.remove(&task.id);
     let task_result = TaskResult {
         id: task.id,
+        owner_id: task.owner_id,
         name: task.name.clone(),
         code_b64: task.code_b64.clone(),
         result: None,

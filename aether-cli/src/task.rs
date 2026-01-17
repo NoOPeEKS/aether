@@ -29,6 +29,7 @@ pub fn parse_task_file(file_path: &str) -> anyhow::Result<String> {
     Ok(encoded)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn send_task_to_broker(
     broker_ip: &str,
     broker_api_port: usize,
@@ -37,6 +38,7 @@ pub async fn send_task_to_broker(
     priority: SupportedPriorities,
     gpu: bool,
     arch: SupportedArchs,
+    token: &str,
 ) -> anyhow::Result<CreateTaskResponse> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks");
@@ -51,9 +53,11 @@ pub async fn send_task_to_broker(
             "arch": arch,
         },
     });
+    let bearer = format!("Bearer {token}");
     let response = client
         .post(broker_addr)
         .header("Content-Type", "application/json")
+        .header("Authorization", bearer)
         .body(body.to_string())
         .send()
         .await?;
@@ -69,10 +73,16 @@ pub async fn check_task(
     broker_ip: &str,
     broker_api_port: usize,
     task_id: &str,
+    token: String,
 ) -> anyhow::Result<GetTaskResponse> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}");
-    let response = client.get(broker_addr).send().await?;
+    let bearer = format!("Bearer {token}");
+    let response = client
+        .get(broker_addr)
+        .header("Authorization", bearer)
+        .send()
+        .await?;
     let resp_body = response.json::<GetTaskResponse>().await?;
     Ok(resp_body)
 }
@@ -80,10 +90,16 @@ pub async fn check_task(
 pub async fn list_tasks(
     broker_ip: &str,
     broker_api_port: usize,
+    token: &str,
 ) -> anyhow::Result<GetAllTasksResponse> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks");
-    let response = client.get(broker_addr).send().await?;
+    let bearer = format!("Bearer {token}");
+    let response = client
+        .get(broker_addr)
+        .header("Authorization", bearer)
+        .send()
+        .await?;
     let resp_body = response.json::<GetAllTasksResponse>().await?;
     Ok(resp_body)
 }
@@ -92,10 +108,19 @@ pub async fn cancel_task(
     broker_ip: &str,
     broker_api_port: usize,
     task_id: &str,
+    token: &str,
 ) -> anyhow::Result<CancelTaskResponse> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}/cancel");
-    let response = client.post(broker_addr).send().await?;
+    let bearer = format!("Bearer {token}");
+    let response = client
+        .post(broker_addr)
+        .header("Authorization", bearer)
+        .send()
+        .await?;
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("{}", response.status());
+    }
     let resp_body = response.json::<CancelTaskResponse>().await?;
     Ok(resp_body)
 }

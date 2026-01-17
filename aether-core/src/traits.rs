@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
+use crate::auth::User;
 use crate::broker::storage::WorkerInfo;
 use crate::capabilities::WorkerCapabilities;
 use crate::task::{Lease, Task, TaskResult};
@@ -61,4 +62,8 @@ pub trait Storage: Send + Sync + 'static {
     async fn get_worker_registry(&self) -> HashMap<String, WorkerInfo>;
 
     async fn remove_worker_from_registry(&self, worker_id: &str) -> Option<WorkerInfo>;
+
+    async fn create_user(&self, user: User) -> anyhow::Result<()>;
+
+    async fn get_user(&self, username: &str) -> anyhow::Result<Option<User>>;
 }

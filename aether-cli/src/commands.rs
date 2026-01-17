@@ -27,6 +27,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: TaskCommands,
     },
+    #[command(about = "Subcommands for handling broker authentication.")]
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+    },
     #[command(
         about = "Launch an interactive terminal user interface for handling an Aether cluster."
     )]
@@ -101,6 +106,9 @@ pub enum TaskCommands {
 
         #[arg(value_enum, long, default_value_t = SupportedArchs::X86_64)]
         arch: SupportedArchs,
+
+        #[arg(long)]
+        token: String,
     },
     Stop {
         #[arg(long)]
@@ -111,6 +119,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         task_id: String,
+
+        #[arg(long)]
+        token: String,
     },
     Check {
         #[arg(long)]
@@ -121,6 +132,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         task_id: String,
+
+        #[arg(long)]
+        token: String,
     },
     List {
         #[arg(long)]
@@ -128,6 +142,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         broker_api_port: usize,
+
+        #[arg(long)]
+        token: String,
     },
 }
 
@@ -163,4 +180,22 @@ impl From<SupportedPriorities> for TaskPriority {
             SupportedPriorities::Low => TaskPriority::Low,
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommands {
+    #[command(about = "Log in with the provided credentials and save the JWT token.")]
+    Login {
+        #[arg(long)]
+        broker_ip: String,
+
+        #[arg(long)]
+        broker_api_port: usize,
+
+        #[arg(long)]
+        username: String,
+
+        #[arg(long)]
+        password: String,
+    },
 }

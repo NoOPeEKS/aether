@@ -346,6 +346,7 @@ async fn handle_worker_shutdown<S: Storage>(
                     let task_id = res.id;
                     let new_task = Task {
                         id: res.id,
+                        owner_id: res.owner_id,
                         name: res.name.clone(),
                         code_b64: res.code_b64.clone(),
                         priority: TaskPriority::High,

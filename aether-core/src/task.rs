@@ -8,6 +8,7 @@ use crate::capabilities::TaskCapabilities;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Task {
     pub id: Uuid,
+    pub owner_id: Uuid,
     pub name: String,
     pub code_b64: String,
     pub priority: TaskPriority,
@@ -25,6 +26,7 @@ pub enum TaskPriority {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskResult {
     pub id: Uuid,
+    pub owner_id: Uuid,
     pub name: String,
     pub code_b64: String,
     pub result: Option<serde_json::Value>,

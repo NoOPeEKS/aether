@@ -1,16 +1,21 @@
+mod auth;
 mod commands;
 mod task;
 
 use aether_broker::DefaultBroker;
+use aether_core::auth::{Permission, User};
 use aether_core::broker::storage::{InMemoryStorage, RedisStorage};
 use aether_core::capabilities::WorkerCapabilities;
-use aether_core::http::CreateTaskResponse;
-use aether_core::traits::Broker;
+use aether_core::http::{CreateTaskResponse, LoginResponse};
+use aether_core::traits::{Broker, Storage};
 use aether_worker::Worker;
+use bcrypt::{DEFAULT_COST, hash};
 use clap::Parser;
-use tracing::info;
+use tracing::{info, warn};
+use uuid::Uuid;
 
-use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
+use crate::auth::get_login_jwt;
+use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
@@ -30,6 +35,13 @@ async fn main() {
                 info!(
                     "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
                 );
+                let admin_user = User {
+                    id: Uuid::new_v4(),
+                    name: "admin".into(),
+                    password_hash: hash("admin", DEFAULT_COST).expect("To be able to hash."),
+                    is_admin: true,
+                    permissions: vec![Permission::All],
+                };
 
                 if let Some(redis_ip) = redis_ip
                     && let Some(redis_port) = redis_port
@@ -37,6 +49,18 @@ async fn main() {
                     let storage = RedisStorage::new(&redis_ip, redis_port)
                         .await
                         .expect("RedisStorage should have been created.");
+                    match storage.create_user(admin_user).await {
+                        Ok(_) => {
+                            warn!(
+                                "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+                            );
+                        }
+                        Err(err) => {
+                            if err.to_string() != "User already exists!" {
+                                panic!("ERROR: {err}");
+                            }
+                        }
+                    }
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
@@ -44,6 +68,10 @@ async fn main() {
                         .expect("Broker should run");
                 } else {
                     let storage = InMemoryStorage::new();
+                    storage
+                        .create_user(admin_user)
+                        .await
+                        .expect("To be able to create admin user.");
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
@@ -88,6 +116,7 @@ async fn main() {
                 priority,
                 gpu,
                 arch,
+                token,
             } => {
                 let task_b64 = match parse_task_file(&task_file) {
                     Ok(task_b64) => task_b64,
@@ -104,6 +133,7 @@ async fn main() {
                     priority,
                     gpu,
                     arch,
+                    &token,
                 )
                 .await
                 {
@@ -124,7 +154,8 @@ async fn main() {
                 broker_ip,
                 broker_api_port,
                 task_id,
-            } => match cancel_task(&broker_ip, broker_api_port, &task_id).await {
+                token,
+            } => match cancel_task(&broker_ip, broker_api_port, &task_id, &token).await {
                 Ok(resp) => {
                     println!("{}", resp.message);
                 }
@@ -134,7 +165,8 @@ async fn main() {
                 broker_ip,
                 broker_api_port,
                 task_id,
-            } => match check_task(&broker_ip, broker_api_port, &task_id).await {
+                token,
+            } => match check_task(&broker_ip, broker_api_port, &task_id, token).await {
                 Ok(resp) => {
                     if let Some(err) = resp.error {
                         eprintln!("{err}");
@@ -149,12 +181,27 @@ async fn main() {
             TaskCommands::List {
                 broker_ip,
                 broker_api_port,
-            } => match list_tasks(&broker_ip, broker_api_port).await {
+                token,
+            } => match list_tasks(&broker_ip, broker_api_port, &token).await {
                 Ok(resp) => {
                     let de_tasks = serde_json::to_string_pretty(&resp)
                         .expect("Failed deserialization of all tasks");
                     println!("{de_tasks}");
                 }
+                Err(err) => eprintln!("ERROR: {err}"),
+            },
+        },
+        Commands::Auth { command } => match command {
+            AuthCommands::Login {
+                broker_ip,
+                broker_api_port,
+                username,
+                password,
+            } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
+                Ok(resp) => match resp {
+                    LoginResponse::Ok { jwt } => println!("{jwt}"),
+                    LoginResponse::Err { message } => eprintln!("ERROR: {message}"),
+                },
                 Err(err) => eprintln!("ERROR: {err}"),
             },
         },
