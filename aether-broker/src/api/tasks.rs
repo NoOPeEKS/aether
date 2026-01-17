@@ -157,6 +157,9 @@ pub async fn cancel_task_handler<S: Storage>(
     match serde_json::to_value(StopExecutionNotificationParams { task_id }) {
         Ok(stop_exec_params) => {
             if let Some(tr) = state.storage.get_task_result(task_id).await {
+                if tr.owner_id != user.id || !user.is_admin {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
                 match tr.status {
                     TaskStatus::Completed => {
                         return format_cancel_response(

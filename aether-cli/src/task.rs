@@ -118,6 +118,9 @@ pub async fn cancel_task(
         .header("Authorization", bearer)
         .send()
         .await?;
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("{}", response.status());
+    }
     let resp_body = response.json::<CancelTaskResponse>().await?;
     Ok(resp_body)
 }
