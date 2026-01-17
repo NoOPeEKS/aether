@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use std::time::SystemTime;
 
@@ -35,7 +35,7 @@ pub struct InMemoryStorage {
     pub leases: RwLock<HashMap<Uuid, Lease>>,
     pub worker_registry: RwLock<HashMap<String, WorkerInfo>>,
     pub worker_sessions: RwLock<HashMap<String, WorkerSession>>,
-    pub users: RwLock<Vec<User>>,
+    pub users: RwLock<HashSet<User>>,
 }
 
 async fn pop_compatible(
@@ -208,7 +208,7 @@ impl Storage for InMemoryStorage {
     }
 
     async fn create_user(&self, user: User) -> anyhow::Result<()> {
-        self.users.write().await.push(user);
+        self.users.write().await.insert(user);
         Ok(())
     }
 
@@ -514,7 +514,10 @@ impl Storage for RedisStorage {
 
     async fn create_user(&self, user: User) -> anyhow::Result<()> {
         let mut conn = self.connection.clone();
-        let users_key = format!("users:{}", user.id);
+        let users_key = format!("users:{}", user.name);
+        if let Ok(true) = conn.exists(&users_key).await {
+            anyhow::bail!("User already exists!");
+        }
         conn.set(users_key, serde_json::to_string(&user)?).await?;
         Ok(())
     }
