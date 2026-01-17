@@ -14,8 +14,8 @@ uuid.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 async-trait.workspace = true
+bcrypt.workspace = true
 
-bcrypt = "0.18"
 jsonwebtoken = { version = "10.2.0", features = ["rust_crypto"]}
 chrono = "0.4.43"
 

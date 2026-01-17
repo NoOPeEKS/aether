@@ -3,13 +3,16 @@ mod commands;
 mod task;
 
 use aether_broker::DefaultBroker;
+use aether_core::auth::User;
 use aether_core::broker::storage::{InMemoryStorage, RedisStorage};
 use aether_core::capabilities::WorkerCapabilities;
 use aether_core::http::{CreateTaskResponse, LoginResponse};
-use aether_core::traits::Broker;
+use aether_core::traits::{Broker, Storage};
 use aether_worker::Worker;
+use bcrypt::{DEFAULT_COST, hash};
 use clap::Parser;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::auth::get_login_jwt;
 use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
@@ -32,6 +35,13 @@ async fn main() {
                 info!(
                     "[INFO] Starting broker at 0.0.0.0:{api_port} (HTTP API) and 0.0.0.0:{jrpc_port} (JRPC). Listening for connections..."
                 );
+                let admin_user = User {
+                    id: Uuid::new_v4(),
+                    name: "admin".into(),
+                    password_hash: hash("admin", DEFAULT_COST).expect("To be able to hash."),
+                    is_admin: true,
+                    permissions: vec!["all".into()],
+                };
 
                 if let Some(redis_ip) = redis_ip
                     && let Some(redis_port) = redis_port
@@ -39,6 +49,10 @@ async fn main() {
                     let storage = RedisStorage::new(&redis_ip, redis_port)
                         .await
                         .expect("RedisStorage should have been created.");
+                    storage
+                        .create_user(admin_user)
+                        .await
+                        .expect("To be able to create admin user.");
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
@@ -46,6 +60,10 @@ async fn main() {
                         .expect("Broker should run");
                 } else {
                     let storage = InMemoryStorage::new();
+                    storage
+                        .create_user(admin_user)
+                        .await
+                        .expect("To be able to create admin user.");
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
