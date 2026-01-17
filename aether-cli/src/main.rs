@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 mod task;
 
@@ -10,7 +11,8 @@ use aether_worker::Worker;
 use clap::Parser;
 use tracing::info;
 
-use crate::commands::{BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
+use crate::auth::get_login_jwt;
+use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
@@ -155,6 +157,17 @@ async fn main() {
                         .expect("Failed deserialization of all tasks");
                     println!("{de_tasks}");
                 }
+                Err(err) => eprintln!("ERROR: {err}"),
+            },
+        },
+        Commands::Auth { command } => match command {
+            AuthCommands::Login {
+                broker_ip,
+                broker_api_port,
+                username,
+                password,
+            } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
+                Ok(resp) => println!("{}", resp.jwt),
                 Err(err) => eprintln!("ERROR: {err}"),
             },
         },

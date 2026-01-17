@@ -27,6 +27,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: TaskCommands,
     },
+    #[command(about = "Subcommands for handling broker authentication.")]
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+    },
     #[command(
         about = "Launch an interactive terminal user interface for handling an Aether cluster."
     )]
@@ -163,4 +168,22 @@ impl From<SupportedPriorities> for TaskPriority {
             SupportedPriorities::Low => TaskPriority::Low,
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommands {
+    #[command(about = "Log in with the provided credentials and save the JWT token.")]
+    Login {
+        #[arg(long)]
+        broker_ip: String,
+
+        #[arg(long)]
+        broker_api_port: usize,
+
+        #[arg(long)]
+        username: String,
+
+        #[arg(long)]
+        password: String,
+    },
 }
