@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::auth::Permission;
 use crate::capabilities::TaskCapabilities;
 use crate::task::{TaskPriority, TaskResult, TaskStatus};
 
@@ -54,5 +55,5 @@ pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub is_admin: bool,
-    pub permissions: Vec<String>,
+    pub permissions: Vec<Permission>,
 }

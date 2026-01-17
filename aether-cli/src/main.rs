@@ -3,7 +3,7 @@ mod commands;
 mod task;
 
 use aether_broker::DefaultBroker;
-use aether_core::auth::User;
+use aether_core::auth::{Permission, User};
 use aether_core::broker::storage::{InMemoryStorage, RedisStorage};
 use aether_core::capabilities::WorkerCapabilities;
 use aether_core::http::{CreateTaskResponse, LoginResponse};
@@ -43,7 +43,7 @@ async fn main() {
                     name: "admin".into(),
                     password_hash: hash("admin", DEFAULT_COST).expect("To be able to hash."),
                     is_admin: true,
-                    permissions: vec!["all".into()],
+                    permissions: vec![Permission::All],
                 };
 
                 if let Some(redis_ip) = redis_ip

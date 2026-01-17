@@ -7,7 +7,18 @@ pub struct User {
     pub name: String,
     pub password_hash: String,
     pub is_admin: bool,
-    pub permissions: Vec<String>,
+    pub permissions: Vec<Permission>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Hash, Eq, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum Permission {
+    CreateUser,
+    CreateTask,
+    CheckTask,
+    CancelTask,
+    ViewWorkers,
+    All,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -21,5 +32,5 @@ pub struct JWTClaims {
     pub user_id: Uuid,
     pub username: String,
     pub is_admin: bool,
-    pub permissions: Vec<String>,
+    pub permissions: Vec<Permission>,
 }
