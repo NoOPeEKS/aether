@@ -106,6 +106,9 @@ pub enum TaskCommands {
 
         #[arg(value_enum, long, default_value_t = SupportedArchs::X86_64)]
         arch: SupportedArchs,
+
+        #[arg(long)]
+        token: String,
     },
     Stop {
         #[arg(long)]
@@ -116,6 +119,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         task_id: String,
+
+        #[arg(long)]
+        token: String,
     },
     Check {
         #[arg(long)]
@@ -126,6 +132,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         task_id: String,
+
+        #[arg(long)]
+        token: String,
     },
     List {
         #[arg(long)]
@@ -133,6 +142,9 @@ pub enum TaskCommands {
 
         #[arg(long)]
         broker_api_port: usize,
+
+        #[arg(long)]
+        token: String,
     },
 }
 

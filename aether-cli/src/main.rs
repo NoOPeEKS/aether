@@ -116,6 +116,7 @@ async fn main() {
                 priority,
                 gpu,
                 arch,
+                token,
             } => {
                 let task_b64 = match parse_task_file(&task_file) {
                     Ok(task_b64) => task_b64,
@@ -132,6 +133,7 @@ async fn main() {
                     priority,
                     gpu,
                     arch,
+                    &token,
                 )
                 .await
                 {
@@ -152,7 +154,8 @@ async fn main() {
                 broker_ip,
                 broker_api_port,
                 task_id,
-            } => match cancel_task(&broker_ip, broker_api_port, &task_id).await {
+                token,
+            } => match cancel_task(&broker_ip, broker_api_port, &task_id, &token).await {
                 Ok(resp) => {
                     println!("{}", resp.message);
                 }
@@ -162,7 +165,8 @@ async fn main() {
                 broker_ip,
                 broker_api_port,
                 task_id,
-            } => match check_task(&broker_ip, broker_api_port, &task_id).await {
+                token,
+            } => match check_task(&broker_ip, broker_api_port, &task_id, token).await {
                 Ok(resp) => {
                     if let Some(err) = resp.error {
                         eprintln!("{err}");
@@ -177,7 +181,8 @@ async fn main() {
             TaskCommands::List {
                 broker_ip,
                 broker_api_port,
-            } => match list_tasks(&broker_ip, broker_api_port).await {
+                token,
+            } => match list_tasks(&broker_ip, broker_api_port, &token).await {
                 Ok(resp) => {
                     let de_tasks = serde_json::to_string_pretty(&resp)
                         .expect("Failed deserialization of all tasks");
