@@ -61,8 +61,15 @@ pub async fn create_task_handler<S: Storage>(
 
 pub async fn get_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
+    Extension(user): Extension<User>,
     Path(task_id): Path<Uuid>,
 ) -> impl IntoResponse {
+    if !user.is_admin
+        && !user.permissions.contains(&Permission::CheckTask)
+        && !user.permissions.contains(&Permission::All)
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     if let Some(task) = state.storage.get_task_result(task_id).await {
         match task.status {
             TaskStatus::Completed | TaskStatus::Queued | TaskStatus::Running => (
@@ -71,21 +78,24 @@ pub async fn get_task_handler<S: Storage>(
                     task: Some(task),
                     error: None,
                 }),
-            ),
+            )
+                .into_response(),
             TaskStatus::Failed => (
                 StatusCode::OK,
                 Json(GetTaskResponse {
                     task: Some(task),
                     error: Some("An error occured parsing inputs.".to_string()),
                 }),
-            ),
+            )
+                .into_response(),
             TaskStatus::Cancelled => (
                 StatusCode::OK,
                 Json(GetTaskResponse {
                     task: Some(task),
                     error: Some("This task got cancelled due too many attempts".to_string()),
                 }),
-            ),
+            )
+                .into_response(),
         }
     } else {
         (
@@ -95,19 +105,28 @@ pub async fn get_task_handler<S: Storage>(
                 error: Some("No task was found with the provided id".to_string()),
             }),
         )
+            .into_response()
     }
 }
 
 pub async fn get_all_tasks_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
+    Extension(user): Extension<User>,
 ) -> impl IntoResponse {
+    if !user.is_admin
+        && !user.permissions.contains(&Permission::ListTasks)
+        && !user.permissions.contains(&Permission::All)
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     if let Some(tasks) = state.storage.get_all_tasks().await {
         (
             StatusCode::OK,
             Json(GetAllTasksResponse { tasks: Some(tasks) }),
         )
+            .into_response()
     } else {
-        (StatusCode::OK, Json(GetAllTasksResponse { tasks: None }))
+        (StatusCode::OK, Json(GetAllTasksResponse { tasks: None })).into_response()
     }
 }
 
@@ -125,8 +144,15 @@ fn format_cancel_response(
 
 pub async fn cancel_task_handler<S: Storage>(
     State(state): State<Arc<BrokerState<S>>>,
+    Extension(user): Extension<User>,
     Path(task_id): Path<Uuid>,
 ) -> impl IntoResponse {
+    if !user.is_admin
+        && !user.permissions.contains(&Permission::CancelTask)
+        && !user.permissions.contains(&Permission::All)
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     match serde_json::to_value(StopExecutionNotificationParams { task_id }) {
         Ok(stop_exec_params) => {
             if let Some(tr) = state.storage.get_task_result(task_id).await {
@@ -135,13 +161,15 @@ pub async fn cancel_task_handler<S: Storage>(
                         return format_cancel_response(
                             StatusCode::CONFLICT,
                             "Cannot cancel an already completed task.",
-                        );
+                        )
+                        .into_response();
                     }
                     TaskStatus::Cancelled => {
                         return format_cancel_response(
                             StatusCode::OK,
                             "Task was already cancelled.",
-                        );
+                        )
+                        .into_response();
                     }
                     _ => {
                         // If its on any state that is not completed or cancelled, means we have a
@@ -161,30 +189,36 @@ pub async fn cancel_task_handler<S: Storage>(
                                     return format_cancel_response(
                                         StatusCode::OK,
                                         format!("Task {task_id} cancelled successfully.").as_ref(),
-                                    );
+                                    )
+                                    .into_response();
                                 }
                                 return format_cancel_response(
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     "Failed to send stop_execution_notification",
-                                );
+                                )
+                                .into_response();
                             }
                             return format_cancel_response(
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 "Could not serialize stop execution notification",
-                            );
+                            )
+                            .into_response();
                         }
                         return format_cancel_response(
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Could not retrieve the task lease.",
-                        );
+                        )
+                        .into_response();
                     }
                 }
             }
             format_cancel_response(StatusCode::NOT_FOUND, "The solicited task does not exist.")
+                .into_response()
         }
         Err(_) => format_cancel_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Could not serialize stop execution params correctly",
-        ),
+        )
+        .into_response(),
     }
 }
