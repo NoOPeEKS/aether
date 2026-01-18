@@ -27,7 +27,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: TaskCommands,
     },
-    #[command(about = "Subcommands for handling broker authentication.")]
+    #[command(about = "Subcommands for handling broker authentication and profiles.")]
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
@@ -90,6 +90,9 @@ pub enum WorkerCommands {
 // but will use the config.json behind the scenes anyway.
 #[derive(Subcommand)]
 pub enum TaskCommands {
+    #[command(
+        about = "Submits a task to a broker. Uses the selected profile by default but allows inline config with params."
+    )]
     Submit {
         #[arg(long, requires_all = ["broker_api_port", "token"])]
         broker_ip: Option<String>,
@@ -115,6 +118,9 @@ pub enum TaskCommands {
         #[arg(long)]
         token: Option<String>,
     },
+    #[command(
+        about = "Stops a task by sending a request to the broker. Uses the selected profile by default, but allows inline config with params"
+    )]
     Stop {
         #[arg(long, requires_all = ["broker_api_port", "token"])]
         broker_ip: Option<String>,
@@ -128,6 +134,9 @@ pub enum TaskCommands {
         #[arg(long)]
         token: Option<String>,
     },
+    #[command(
+        about = "Checks the information of a task. Uses the selected profile by default but allows inline config."
+    )]
     Check {
         #[arg(long, requires_all = ["broker_api_port", "token"])]
         broker_ip: Option<String>,
@@ -141,6 +150,9 @@ pub enum TaskCommands {
         #[arg(long)]
         token: Option<String>,
     },
+    #[command(
+        about = "Checks the information of all tasks. Uses the selected profile by default but allows inline config."
+    )]
     List {
         #[arg(long, requires_all = ["broker_api_port", "token"])]
         broker_ip: Option<String>,
@@ -189,7 +201,9 @@ impl From<SupportedPriorities> for TaskPriority {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
-    #[command(about = "Log in with the provided credentials and save the JWT token.")]
+    #[command(
+        about = "Log in with the provided credentials to a broker and save it as a profile. Selects it as the active profile."
+    )]
     Login {
         #[arg(long)]
         profile: String,
@@ -206,10 +220,8 @@ pub enum AuthCommands {
         #[arg(long)]
         password: String,
     },
-    Switch {
-        profile: String,
-    },
-    Logout {
-        profile: String,
-    }
+    #[command(about = "Switches the active profile from one to another.")]
+    Switch { profile: String },
+    #[command(about = "Removes information about a profile.")]
+    Logout { profile: String },
 }

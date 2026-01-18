@@ -6,7 +6,6 @@ pub async fn get_login_jwt(
     username: &str,
     password: &str,
 ) -> anyhow::Result<LoginResponse> {
-    // TODO: Try to save this JWT token to `~/.aether/token`.
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/auth/login");
     let req_body = LoginRequest {
