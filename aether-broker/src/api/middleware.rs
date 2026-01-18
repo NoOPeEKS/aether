@@ -1,12 +1,11 @@
-use aether_core::traits::Storage;
-use axum::{
-    extract::{Request, State},
-    http::{StatusCode, header},
-    middleware::Next,
-    response::Response,
-};
-use chrono::Utc;
 use std::sync::Arc;
+
+use aether_core::traits::Storage;
+use axum::extract::{Request, State};
+use axum::http::{StatusCode, header};
+use axum::middleware::Next;
+use axum::response::Response;
+use chrono::Utc;
 
 use crate::BrokerState;
 use crate::api::auth::verify_jwt;
