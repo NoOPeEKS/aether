@@ -187,6 +187,9 @@ pub enum AuthCommands {
     #[command(about = "Log in with the provided credentials and save the JWT token.")]
     Login {
         #[arg(long)]
+        profile: String,
+
+        #[arg(long)]
         broker_ip: String,
 
         #[arg(long)]

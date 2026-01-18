@@ -1,7 +1,7 @@
 mod auth;
 mod commands;
-mod task;
 mod config;
+mod task;
 
 use aether_broker::DefaultBroker;
 use aether_core::auth::{Permission, User};
@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::auth::get_login_jwt;
 use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
+use crate::config::{AetherConfig, BrokerProfile};
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
@@ -194,13 +195,24 @@ async fn main() {
         },
         Commands::Auth { command } => match command {
             AuthCommands::Login {
+                profile,
                 broker_ip,
                 broker_api_port,
                 username,
                 password,
             } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
                 Ok(resp) => match resp {
-                    LoginResponse::Ok { jwt } => println!("{jwt}"),
+                    LoginResponse::Ok { jwt } => {
+                        let mut cfg = AetherConfig::get()
+                            .expect("Could not open/generate ~/.aether/config.json.");
+                        let bp = BrokerProfile::new(&broker_ip, broker_api_port, &jwt);
+                        cfg.profiles.insert(profile.clone(), bp);
+                        cfg.active = Some(profile);
+                        cfg.save().expect(
+                            "Could not save profile configuration to ~/.aether/config.json",
+                        );
+                        println!("{jwt}");
+                    }
                     LoginResponse::Err { message } => eprintln!("ERROR: {message}"),
                 },
                 Err(err) => eprintln!("ERROR: {err}"),

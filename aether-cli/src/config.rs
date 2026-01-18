@@ -48,7 +48,7 @@ impl AetherConfig {
         }
     }
 
-    fn save(&self) -> anyhow::Result<()> {
+    pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::aether_path()?;
 
         if let Some(parent) = path.parent() {
