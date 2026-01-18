@@ -206,4 +206,7 @@ pub enum AuthCommands {
         #[arg(long)]
         password: String,
     },
+    Switch {
+        profile: String,
+    }
 }

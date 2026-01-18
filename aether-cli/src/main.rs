@@ -279,6 +279,16 @@ async fn main() {
                 },
                 Err(err) => eprintln!("ERROR: {err}"),
             },
+            AuthCommands::Switch { profile } => {
+                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                if cfg.profiles.contains_key(&profile) {
+                    cfg.active = Some(profile.clone());
+                    cfg.save().expect("Could not save the profile switch.");
+                    println!("Auth profile switched to {profile}.");
+                } else {
+                    eprintln!("Profile with name `{profile}` does not exist.");
+                }
+            }
         },
         Commands::Tui {
             broker_ip: _,
