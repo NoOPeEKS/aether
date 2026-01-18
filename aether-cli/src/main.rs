@@ -111,7 +111,6 @@ async fn main() {
         },
         Commands::Task { command } => match command {
             TaskCommands::Submit {
-                profile,
                 broker_ip,
                 broker_api_port,
                 task_file,
@@ -128,14 +127,13 @@ async fn main() {
                         return;
                     }
                 };
-                let tmp_profile =
-                    match BrokerProfile::resolve(profile, broker_ip, broker_api_port, token) {
-                        Ok(bp) => bp,
-                        Err(err) => {
-                            eprintln!("ERROR: {err}");
-                            return;
-                        }
-                    };
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
                 match send_task_to_broker(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
@@ -168,41 +166,94 @@ async fn main() {
                 broker_api_port,
                 task_id,
                 token,
-            } => match cancel_task(&broker_ip, broker_api_port, &task_id, &token).await {
-                Ok(resp) => {
-                    println!("{}", resp.message);
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
+                match cancel_task(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &task_id,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile"),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        println!("{}", resp.message);
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
             TaskCommands::Check {
                 broker_ip,
                 broker_api_port,
                 task_id,
                 token,
-            } => match check_task(&broker_ip, broker_api_port, &task_id, token).await {
-                Ok(resp) => {
-                    if let Some(err) = resp.error {
-                        eprintln!("{err}");
-                    } else if let Some(task) = resp.task {
-                        let de_task = serde_json::to_string_pretty(&task)
-                            .expect("Failed deserialization of task.");
-                        println!("{de_task}");
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
                     }
+                };
+                match check_task(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &task_id,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile."),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        if let Some(err) = resp.error {
+                            eprintln!("{err}");
+                        } else if let Some(task) = resp.task {
+                            let de_task = serde_json::to_string_pretty(&task)
+                                .expect("Failed deserialization of task.");
+                            println!("{de_task}");
+                        }
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
             TaskCommands::List {
                 broker_ip,
                 broker_api_port,
                 token,
-            } => match list_tasks(&broker_ip, broker_api_port, &token).await {
-                Ok(resp) => {
-                    let de_tasks = serde_json::to_string_pretty(&resp)
-                        .expect("Failed deserialization of all tasks");
-                    println!("{de_tasks}");
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
+                match list_tasks(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile"),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        let de_tasks = serde_json::to_string_pretty(&resp)
+                            .expect("Failed deserialization of all tasks");
+                        println!("{de_tasks}");
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
         },
         Commands::Auth { command } => match command {
             AuthCommands::Login {

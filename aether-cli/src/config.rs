@@ -77,23 +77,29 @@ impl BrokerProfile {
     }
 
     pub fn resolve(
-        profile: Option<String>,
         broker_ip: Option<String>,
         broker_api_port: Option<usize>,
         token: Option<String>,
     ) -> anyhow::Result<Self> {
-        if let Some(profile) = profile {
-            let cfg = AetherConfig::get()?;
-            if let Some(prf) = cfg.profiles.get(&profile).cloned() {
-                return Ok(prf);
-            }
-            anyhow::bail!("The provided profile does not exist.");
-        } else {
+        if let Some(broker_ip) = broker_ip
+            && let Some(broker_api_port) = broker_api_port
+            && let Some(token) = token
+        {
             Ok(Self {
-                broker_ip: broker_ip.unwrap(),
-                broker_api_port: broker_api_port.unwrap(),
-                token: Some(token.unwrap()),
+                broker_ip,
+                broker_api_port,
+                token: Some(token),
             })
+        } else {
+            let cfg = AetherConfig::get()?;
+            if let Some(active) = cfg.active {
+                if let Some(prf) = cfg.profiles.get(&active).cloned() {
+                    return Ok(prf);
+                }
+                anyhow::bail!("Could not get active profile for unexpected reasons");
+            } else {
+                anyhow::bail!("There's no active default profile.");
+            }
         }
     }
 }

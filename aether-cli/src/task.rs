@@ -73,7 +73,7 @@ pub async fn check_task(
     broker_ip: &str,
     broker_api_port: usize,
     task_id: &str,
-    token: String,
+    token: &str,
 ) -> anyhow::Result<GetTaskResponse> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}");
