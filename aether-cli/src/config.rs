@@ -8,7 +8,7 @@ pub struct AetherConfig {
     pub active: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BrokerProfile {
     pub broker_ip: String,
     pub broker_api_port: usize,
@@ -73,6 +73,27 @@ impl BrokerProfile {
             broker_ip: broker_ip.into(),
             broker_api_port,
             token: Some(token.into()),
+        }
+    }
+
+    pub fn resolve(
+        profile: Option<String>,
+        broker_ip: Option<String>,
+        broker_api_port: Option<usize>,
+        token: Option<String>,
+    ) -> anyhow::Result<Self> {
+        if let Some(profile) = profile {
+            let cfg = AetherConfig::get()?;
+            if let Some(prf) = cfg.profiles.get(&profile).cloned() {
+                return Ok(prf);
+            }
+            anyhow::bail!("The provided profile does not exist.");
+        } else {
+            Ok(Self {
+                broker_ip: broker_ip.unwrap(),
+                broker_api_port: broker_api_port.unwrap(),
+                token: Some(token.unwrap()),
+            })
         }
     }
 }

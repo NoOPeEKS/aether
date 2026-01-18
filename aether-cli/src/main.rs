@@ -111,6 +111,7 @@ async fn main() {
         },
         Commands::Task { command } => match command {
             TaskCommands::Submit {
+                profile,
                 broker_ip,
                 broker_api_port,
                 task_file,
@@ -127,15 +128,25 @@ async fn main() {
                         return;
                     }
                 };
+                let tmp_profile =
+                    match BrokerProfile::resolve(profile, broker_ip, broker_api_port, token) {
+                        Ok(bp) => bp,
+                        Err(err) => {
+                            eprintln!("ERROR: {err}");
+                            return;
+                        }
+                    };
                 match send_task_to_broker(
-                    &broker_ip,
-                    broker_api_port,
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
                     &task_b64,
                     &name,
                     priority,
                     gpu,
                     arch,
-                    &token,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config file"),
                 )
                 .await
                 {

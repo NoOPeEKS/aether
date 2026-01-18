@@ -86,11 +86,14 @@ pub enum WorkerCommands {
 #[derive(Subcommand)]
 pub enum TaskCommands {
     Submit {
-        #[arg(long)]
-        broker_ip: String,
+        #[arg(long, conflicts_with_all = ["broker_ip", "broker_api_port", "token"])]
+        profile: Option<String>,
 
-        #[arg(long)]
-        broker_api_port: usize,
+        #[arg(long, required_unless_present = "profile")]
+        broker_ip: Option<String>,
+
+        #[arg(long, required_unless_present = "profile")]
+        broker_api_port: Option<usize>,
 
         #[arg(long)]
         task_file: String,
@@ -107,8 +110,8 @@ pub enum TaskCommands {
         #[arg(value_enum, long, default_value_t = SupportedArchs::X86_64)]
         arch: SupportedArchs,
 
-        #[arg(long)]
-        token: String,
+        #[arg(long, required_unless_present = "profile")]
+        token: Option<String>,
     },
     Stop {
         #[arg(long)]
