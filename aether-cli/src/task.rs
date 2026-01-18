@@ -15,27 +15,27 @@ use crate::error::CliError;
 pub fn parse_task_file(file_path: &str) -> Result<String, CliError> {
     let path = Path::new(file_path)
         .canonicalize()
-        .map_err(|_| CliError::ParseTask("Could not canonicalize provided path.".into()))?;
+        .map_err(|_| CliError::ParseTaskError("Could not canonicalize provided path.".into()))?;
 
     let path_exists = path
         .try_exists()
-        .map_err(|_| CliError::ParseTask("Path does not exist.".into()))?;
+        .map_err(|_| CliError::ParseTaskError("Path does not exist.".into()))?;
 
     if !path_exists {
-        return Err(CliError::ParseTask(
+        return Err(CliError::ParseTaskError(
             "The provided file path must exist!".into(),
         ));
     }
     if let Some(ext) = path.extension()
         && ext != "py"
     {
-        return Err(CliError::ParseTask(
+        return Err(CliError::ParseTaskError(
             "Task file must be a python file!".into(),
         ));
     }
 
     let file_contents = std::fs::read_to_string(path)
-        .map_err(|_| CliError::ParseTask("Could not read file contents.".into()))?;
+        .map_err(|_| CliError::ParseTaskError("Could not read file contents.".into()))?;
     let encoded = BASE64_STANDARD.encode(file_contents.as_bytes());
     Ok(encoded)
 }
@@ -72,7 +72,7 @@ pub async fn send_task_to_broker(
         .body(body.to_string())
         .send()
         .await
-        .map_err(|_| CliError::SendRequest)?;
+        .map_err(|_| CliError::SendRequestError)?;
     let status = response.status();
     if status != StatusCode::CREATED {
         return Err(CliError::UnexpectedStatusCode(status));
@@ -80,7 +80,7 @@ pub async fn send_task_to_broker(
     let resp_body = response
         .json::<CreateTaskResponse>()
         .await
-        .map_err(|_| CliError::DeserializeRequest)?;
+        .map_err(|_| CliError::DeserializeRequestError)?;
     Ok(resp_body)
 }
 
@@ -98,7 +98,7 @@ pub async fn check_task(
         .header("Authorization", bearer)
         .send()
         .await
-        .map_err(|_| CliError::SendRequest)?;
+        .map_err(|_| CliError::SendRequestError)?;
     let status = response.status();
     if status != StatusCode::OK {
         return Err(CliError::UnexpectedStatusCode(status));
@@ -106,7 +106,7 @@ pub async fn check_task(
     let resp_body = response
         .json::<GetTaskResponse>()
         .await
-        .map_err(|_| CliError::DeserializeRequest)?;
+        .map_err(|_| CliError::DeserializeRequestError)?;
     Ok(resp_body)
 }
 
@@ -123,7 +123,7 @@ pub async fn list_tasks(
         .header("Authorization", bearer)
         .send()
         .await
-        .map_err(|_| CliError::SendRequest)?;
+        .map_err(|_| CliError::SendRequestError)?;
     let status = response.status();
     if status != StatusCode::OK {
         return Err(CliError::UnexpectedStatusCode(status));
@@ -131,7 +131,7 @@ pub async fn list_tasks(
     let resp_body = response
         .json::<GetAllTasksResponse>()
         .await
-        .map_err(|_| CliError::DeserializeRequest)?;
+        .map_err(|_| CliError::DeserializeRequestError)?;
     Ok(resp_body)
 }
 
@@ -149,14 +149,14 @@ pub async fn cancel_task(
         .header("Authorization", bearer)
         .send()
         .await
-        .map_err(|_| CliError::SendRequest)?;
+        .map_err(|_| CliError::SendRequestError)?;
     if response.status() != StatusCode::OK {
         return Err(CliError::UnexpectedStatusCode(response.status()));
     }
     let resp_body = response
         .json::<CancelTaskResponse>()
         .await
-        .map_err(|_| CliError::DeserializeRequest)?;
+        .map_err(|_| CliError::DeserializeRequestError)?;
     Ok(resp_body)
 }
 

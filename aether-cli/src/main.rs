@@ -23,7 +23,7 @@ use crate::error::CliError;
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), CliError> {
     tracing_subscriber::fmt().init();
 
     let cli = Cli::parse();
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
                 {
                     let storage = RedisStorage::new(&redis_ip, redis_port)
                         .await
-                        .map_err(|_| CliError::RedisStorageCreation)?;
+                        .map_err(|_| CliError::RedisStorageCreationError)?;
 
                     storage
                         .create_user(admin_user)
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
                     storage
                         .create_user(admin_user)
                         .await
-                        .map_err(|_| CliError::SuperUserCreation)?;
+                        .map_err(|_| CliError::SuperUserCreationError)?;
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
@@ -119,8 +119,7 @@ async fn main() -> anyhow::Result<()> {
                 token,
             } => {
                 let task_b64 = parse_task_file(&task_file)?;
-                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
-                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)?;
                 let response = send_task_to_broker(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
@@ -149,8 +148,7 @@ async fn main() -> anyhow::Result<()> {
                 task_id,
                 token,
             } => {
-                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
-                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)?;
                 let response = cancel_task(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
@@ -168,8 +166,7 @@ async fn main() -> anyhow::Result<()> {
                 task_id,
                 token,
             } => {
-                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
-                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)?;
                 let response = check_task(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
@@ -183,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
                     eprintln!("{err}");
                 } else if let Some(task) = response.task {
                     let de_task = serde_json::to_string_pretty(&task)
-                        .map_err(|_| CliError::DeserializeTask)?;
+                        .map_err(|_| CliError::DeserializeTaskError)?;
                     println!("{de_task}");
                 }
             }
@@ -192,8 +189,7 @@ async fn main() -> anyhow::Result<()> {
                 broker_api_port,
                 token,
             } => {
-                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
-                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)?;
                 let response = list_tasks(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
@@ -203,7 +199,7 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
                 let de_tasks = serde_json::to_string_pretty(&response)
-                    .map_err(|_| CliError::DeserializeTaskList)?;
+                    .map_err(|_| CliError::DeserializeTaskListError)?;
                 println!("{de_tasks}");
             }
         },
@@ -214,42 +210,39 @@ async fn main() -> anyhow::Result<()> {
                 broker_api_port,
                 username,
                 password,
-            } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
-                Ok(resp) => match resp {
+            } => {
+                let resp = get_login_jwt(&broker_ip, broker_api_port, &username, &password).await?;
+                match resp {
                     LoginResponse::Ok { jwt } => {
-                        let mut cfg = AetherConfig::get()
-                            .expect("Could not open/generate ~/.aether/config.json.");
+                        let mut cfg = AetherConfig::get()?;
                         let bp = BrokerProfile::new(&broker_ip, broker_api_port, &jwt);
                         cfg.profiles.insert(profile.clone(), bp);
                         cfg.active = Some(profile);
-                        cfg.save().expect(
-                            "Could not save profile configuration to ~/.aether/config.json",
-                        );
+                        cfg.save()?;
                         println!("{jwt}");
                     }
                     LoginResponse::Err { message } => eprintln!("ERROR: {message}"),
-                },
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+                }
+            }
             AuthCommands::Switch { profile } => {
-                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                let mut cfg = AetherConfig::get()?;
                 if cfg.profiles.contains_key(&profile) {
                     cfg.active = Some(profile.clone());
-                    cfg.save().expect("Could not save the profile switch.");
+                    cfg.save()?;
                     println!("Auth profile switched to {profile}.");
                 } else {
                     eprintln!("Profile with name `{profile}` does not exist.");
                 }
             }
             AuthCommands::Logout { profile } => {
-                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                let mut cfg = AetherConfig::get()?;
                 if cfg.profiles.remove(&profile).is_some() {
                     if let Some(ref act) = cfg.active
                         && *act == profile
                     {
                         cfg.active = None;
                     }
-                    cfg.save().expect("Could not save the profile switch.");
+                    cfg.save()?;
                     println!("Profile {profile} removed.");
                 } else {
                     eprintln!("Profile with name `{profile}` does not exist.");

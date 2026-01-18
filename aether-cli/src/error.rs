@@ -4,13 +4,13 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum CliError {
     #[error("RedisStorage could not be created.")]
-    RedisStorageCreation,
+    RedisStorageCreationError,
 
     #[error("Super user 'admin' already exists.")]
     SuperUserAlreadyExists,
 
     #[error("Could not create super user 'admin'.")]
-    SuperUserCreation,
+    SuperUserCreationError,
 
     #[error("Redis-based Broker crashed and could not start up.")]
     RedisBrokerCouldNotRun,
@@ -18,24 +18,39 @@ pub enum CliError {
     #[error("InMemory-based Broker crashed and could not start up.")]
     InMemoryBrokerCouldNotRun,
 
-    #[error("Could not resolve broker information.")]
-    BrokerProfileResolve,
+    #[error("{0}")]
+    BrokerProfileResolveError(String),
 
     #[error("{0}")]
-    ParseTask(String),
+    ParseTaskError(String),
 
     #[error("Recieved an unexpected status code: {0}")]
     UnexpectedStatusCode(StatusCode),
 
     #[error("An error happened while sending the request.")]
-    SendRequest,
+    SendRequestError,
+
+    #[error("Could not serialize with serde_json.")]
+    SerializeSerdeError,
+
+    #[error("Could not deserialize with serde_json.")]
+    DeserializeSerdeError,
 
     #[error("Could not deserialize request's JSON.")]
-    DeserializeRequest,
-
-    #[error("Could not deserialize the selected Task.")]
-    DeserializeTaskList,
+    DeserializeRequestError,
 
     #[error("Could not deserialize the list of Tasks.")]
-    DeserializeTask,
+    DeserializeTaskListError,
+
+    #[error("Could not deserialize the selected Task.")]
+    DeserializeTaskError,
+
+    #[error("Could not determine home directory.")]
+    InvalidHomeDir,
+
+    #[error("Could not open or generate ~/.aether/config.json. Reason: {0}")]
+    GetConfigError(String),
+
+    #[error("Could not save config to ~/.aether/config.json. Reason: {0}")]
+    SaveConfigError(String),
 }

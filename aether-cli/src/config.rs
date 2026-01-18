@@ -2,6 +2,8 @@ use std::{collections::HashMap, fs::OpenOptions, io::Write, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::CliError;
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct AetherConfig {
     pub profiles: HashMap<String, BrokerProfile>,
@@ -18,50 +20,69 @@ pub struct BrokerProfile {
 impl AetherConfig {
     const AETHER_REL_PATH: &str = ".aether/config.json";
 
-    pub fn aether_path() -> anyhow::Result<PathBuf> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+    pub fn aether_path() -> Result<PathBuf, CliError> {
+        let home = dirs::home_dir().ok_or_else(|| CliError::InvalidHomeDir)?;
 
         Ok(home.join(Self::AETHER_REL_PATH))
     }
 
-    pub fn get() -> anyhow::Result<Self> {
+    pub fn get() -> Result<Self, CliError> {
         let path = Self::aether_path()?;
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|_| {
+                CliError::GetConfigError("Could not create config parent directories.".into())
+            })?;
         }
 
         if path.exists() {
-            let file = std::fs::File::open(&path)?;
-            Ok(serde_json::from_reader(file)?)
+            let file = std::fs::File::open(&path)
+                .map_err(|_| CliError::GetConfigError("Could not open file descriptor.".into()))?;
+            Ok(serde_json::from_reader(file).map_err(|_| CliError::DeserializeSerdeError)?)
         } else {
             let default_cfg = AetherConfig {
                 profiles: HashMap::new(),
                 active: None,
             };
 
-            let mut file = std::fs::File::create(&path)?;
-            file.write_all(serde_json::to_string_pretty(&default_cfg)?.as_bytes())?;
+            let mut file = std::fs::File::create(&path).map_err(|_| {
+                CliError::GetConfigError("Could not create ~/.aether/config.json".into())
+            })?;
+            file.write_all(
+                serde_json::to_string_pretty(&default_cfg)
+                    .map_err(|_| CliError::SerializeSerdeError)?
+                    .as_bytes(),
+            )
+            .map_err(|_| CliError::GetConfigError("Could not write to file descriptor.".into()))?;
 
             Ok(default_cfg)
         }
     }
 
-    pub fn save(&self) -> anyhow::Result<()> {
+    pub fn save(&self) -> Result<(), CliError> {
         let path = Self::aether_path()?;
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|_| {
+                CliError::SaveConfigError("Could not create config parent directories.".into())
+            })?;
         }
 
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
-            .open(&path)?;
+            .open(&path)
+            .map_err(|_| {
+                CliError::SaveConfigError("Could not create or open file descriptor.".into())
+            })?;
 
-        file.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
+        file.write_all(
+            serde_json::to_string_pretty(self)
+                .map_err(|_| CliError::SerializeSerdeError)?
+                .as_bytes(),
+        )
+        .map_err(|_| CliError::SaveConfigError("Could not write to file descriptor.".into()))?;
 
         Ok(())
     }
@@ -80,7 +101,7 @@ impl BrokerProfile {
         broker_ip: Option<String>,
         broker_api_port: Option<usize>,
         token: Option<String>,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, CliError> {
         if let Some(broker_ip) = broker_ip
             && let Some(broker_api_port) = broker_api_port
             && let Some(token) = token
@@ -96,9 +117,13 @@ impl BrokerProfile {
                 if let Some(prf) = cfg.profiles.get(&active).cloned() {
                     return Ok(prf);
                 }
-                anyhow::bail!("Could not get active profile for unexpected reasons");
+                Err(CliError::BrokerProfileResolveError(
+                    "Could not get active profile for unexpected reasons.".into(),
+                ))
             } else {
-                anyhow::bail!("There's no active default profile.");
+                Err(CliError::BrokerProfileResolveError(
+                    "There's no active default profile.".into(),
+                ))
             }
         }
     }
