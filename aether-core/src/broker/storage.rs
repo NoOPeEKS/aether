@@ -294,7 +294,7 @@ impl Storage for RedisStorage {
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: None,
-                        status: TaskStatus::Queued,
+                        status: TaskStatus::Running,
                         capabilities: task.capabilities.clone(),
                     };
                     // TODO: Check this unwrap.
@@ -306,7 +306,7 @@ impl Storage for RedisStorage {
                     let lease_key = format!("leases:{}", task.id);
                     let lease = Lease {
                         worker_id: worker_id.to_owned(),
-                        attempts: 1,
+                        attempts: 0,
                         start_time: SystemTime::now(),
                     };
                     // TODO: Check this unwrap.
