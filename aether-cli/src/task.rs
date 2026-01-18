@@ -10,21 +10,32 @@ use reqwest::StatusCode;
 use serde_json::json;
 
 use crate::commands::{SupportedArchs, SupportedPriorities};
+use crate::error::CliError;
 
-pub fn parse_task_file(file_path: &str) -> anyhow::Result<String> {
-    let path = Path::new(file_path).canonicalize()?;
-    let path_exists = path.try_exists()?;
+pub fn parse_task_file(file_path: &str) -> Result<String, CliError> {
+    let path = Path::new(file_path)
+        .canonicalize()
+        .map_err(|_| CliError::ParseTask("Could not canonicalize provided path.".into()))?;
+
+    let path_exists = path
+        .try_exists()
+        .map_err(|_| CliError::ParseTask("Path does not exist.".into()))?;
 
     if !path_exists {
-        anyhow::bail!("The provided file path must exist!");
+        return Err(CliError::ParseTask(
+            "The provided file path must exist!".into(),
+        ));
     }
     if let Some(ext) = path.extension()
         && ext != "py"
     {
-        anyhow::bail!("Task file must be a python file!");
+        return Err(CliError::ParseTask(
+            "Task file must be a python file!".into(),
+        ));
     }
 
-    let file_contents = std::fs::read_to_string(path)?;
+    let file_contents = std::fs::read_to_string(path)
+        .map_err(|_| CliError::ParseTask("Could not read file contents.".into()))?;
     let encoded = BASE64_STANDARD.encode(file_contents.as_bytes());
     Ok(encoded)
 }
@@ -39,7 +50,7 @@ pub async fn send_task_to_broker(
     gpu: bool,
     arch: SupportedArchs,
     token: &str,
-) -> anyhow::Result<CreateTaskResponse> {
+) -> Result<CreateTaskResponse, CliError> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks");
     let priority: TaskPriority = priority.into();
@@ -60,12 +71,16 @@ pub async fn send_task_to_broker(
         .header("Authorization", bearer)
         .body(body.to_string())
         .send()
-        .await?;
+        .await
+        .map_err(|_| CliError::SendRequest)?;
     let status = response.status();
     if status != StatusCode::CREATED {
-        anyhow::bail!("Got an unexpected Status Code ({status:?}).");
+        return Err(CliError::UnexpectedStatusCode(status));
     }
-    let resp_body = response.json::<CreateTaskResponse>().await?;
+    let resp_body = response
+        .json::<CreateTaskResponse>()
+        .await
+        .map_err(|_| CliError::DeserializeRequest)?;
     Ok(resp_body)
 }
 
@@ -74,7 +89,7 @@ pub async fn check_task(
     broker_api_port: usize,
     task_id: &str,
     token: &str,
-) -> anyhow::Result<GetTaskResponse> {
+) -> Result<GetTaskResponse, CliError> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}");
     let bearer = format!("Bearer {token}");
@@ -82,8 +97,16 @@ pub async fn check_task(
         .get(broker_addr)
         .header("Authorization", bearer)
         .send()
-        .await?;
-    let resp_body = response.json::<GetTaskResponse>().await?;
+        .await
+        .map_err(|_| CliError::SendRequest)?;
+    let status = response.status();
+    if status != StatusCode::OK {
+        return Err(CliError::UnexpectedStatusCode(status));
+    }
+    let resp_body = response
+        .json::<GetTaskResponse>()
+        .await
+        .map_err(|_| CliError::DeserializeRequest)?;
     Ok(resp_body)
 }
 
@@ -91,7 +114,7 @@ pub async fn list_tasks(
     broker_ip: &str,
     broker_api_port: usize,
     token: &str,
-) -> anyhow::Result<GetAllTasksResponse> {
+) -> Result<GetAllTasksResponse, CliError> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks");
     let bearer = format!("Bearer {token}");
@@ -99,8 +122,16 @@ pub async fn list_tasks(
         .get(broker_addr)
         .header("Authorization", bearer)
         .send()
-        .await?;
-    let resp_body = response.json::<GetAllTasksResponse>().await?;
+        .await
+        .map_err(|_| CliError::SendRequest)?;
+    let status = response.status();
+    if status != StatusCode::OK {
+        return Err(CliError::UnexpectedStatusCode(status));
+    }
+    let resp_body = response
+        .json::<GetAllTasksResponse>()
+        .await
+        .map_err(|_| CliError::DeserializeRequest)?;
     Ok(resp_body)
 }
 
@@ -109,7 +140,7 @@ pub async fn cancel_task(
     broker_api_port: usize,
     task_id: &str,
     token: &str,
-) -> anyhow::Result<CancelTaskResponse> {
+) -> Result<CancelTaskResponse, CliError> {
     let client = reqwest::Client::new();
     let broker_addr = format!("http://{broker_ip}:{broker_api_port}/api/v1/tasks/{task_id}/cancel");
     let bearer = format!("Bearer {token}");
@@ -117,11 +148,15 @@ pub async fn cancel_task(
         .post(broker_addr)
         .header("Authorization", bearer)
         .send()
-        .await?;
+        .await
+        .map_err(|_| CliError::SendRequest)?;
     if response.status() != StatusCode::OK {
-        anyhow::bail!("{}", response.status());
+        return Err(CliError::UnexpectedStatusCode(response.status()));
     }
-    let resp_body = response.json::<CancelTaskResponse>().await?;
+    let resp_body = response
+        .json::<CancelTaskResponse>()
+        .await
+        .map_err(|_| CliError::DeserializeRequest)?;
     Ok(resp_body)
 }
 

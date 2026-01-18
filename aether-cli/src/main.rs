@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod config;
+mod error;
 mod task;
 
 use aether_broker::DefaultBroker;
@@ -18,10 +19,11 @@ use uuid::Uuid;
 use crate::auth::get_login_jwt;
 use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
 use crate::config::{AetherConfig, BrokerProfile};
+use crate::error::CliError;
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
 
     let cli = Cli::parse();
@@ -50,35 +52,31 @@ async fn main() {
                 {
                     let storage = RedisStorage::new(&redis_ip, redis_port)
                         .await
-                        .expect("RedisStorage should have been created.");
-                    match storage.create_user(admin_user).await {
-                        Ok(_) => {
-                            warn!(
-                                "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
-                            );
-                        }
-                        Err(err) => {
-                            if err.to_string() != "User already exists!" {
-                                panic!("ERROR: {err}");
-                            }
-                        }
-                    }
+                        .map_err(|_| CliError::RedisStorageCreation)?;
+
+                    storage
+                        .create_user(admin_user)
+                        .await
+                        .map_err(|_| CliError::SuperUserAlreadyExists)?;
+                    warn!(
+                        "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+                    );
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
                         .await
-                        .expect("Broker should run");
+                        .map_err(|_| CliError::RedisBrokerCouldNotRun)?;
                 } else {
                     let storage = InMemoryStorage::new();
                     storage
                         .create_user(admin_user)
                         .await
-                        .expect("To be able to create admin user.");
+                        .map_err(|_| CliError::SuperUserCreation)?;
                     let broker = DefaultBroker::new(storage);
                     broker
                         .run(api_port, jrpc_port)
                         .await
-                        .expect("Broker should run");
+                        .map_err(|_| CliError::InMemoryBrokerCouldNotRun)?;
                 }
             }
         },
@@ -120,21 +118,10 @@ async fn main() {
                 arch,
                 token,
             } => {
-                let task_b64 = match parse_task_file(&task_file) {
-                    Ok(task_b64) => task_b64,
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
-                        return;
-                    }
-                };
-                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
-                    Ok(bp) => bp,
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
-                        return;
-                    }
-                };
-                match send_task_to_broker(
+                let task_b64 = parse_task_file(&task_file)?;
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
+                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let response = send_task_to_broker(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
                     &task_b64,
@@ -146,18 +133,13 @@ async fn main() {
                         .token
                         .expect("A token should have been provided on flag or config file"),
                 )
-                .await
-                {
-                    Ok(response) => match response {
-                        CreateTaskResponse::Ok { task_id, status } => {
-                            println!("Task {} submitted. Status: {:?}", task_id, status);
-                        }
-                        CreateTaskResponse::Error { message } => {
-                            eprintln!("Status Code 500 Internal Server Error: {message}");
-                        }
-                    },
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
+                .await?;
+                match response {
+                    CreateTaskResponse::Ok { task_id, status } => {
+                        println!("Task {} submitted. Status: {:?}", task_id, status);
+                    }
+                    CreateTaskResponse::Error { message } => {
+                        eprintln!("Status Code 500 Internal Server Error: {message}");
                     }
                 }
             }
@@ -167,14 +149,9 @@ async fn main() {
                 task_id,
                 token,
             } => {
-                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
-                    Ok(bp) => bp,
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
-                        return;
-                    }
-                };
-                match cancel_task(
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
+                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let response = cancel_task(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
                     &task_id,
@@ -182,13 +159,8 @@ async fn main() {
                         .token
                         .expect("A token should have been provided on flag or config profile"),
                 )
-                .await
-                {
-                    Ok(resp) => {
-                        println!("{}", resp.message);
-                    }
-                    Err(err) => eprintln!("ERROR: {err}"),
-                }
+                .await?;
+                println!("{}", response.message);
             }
             TaskCommands::Check {
                 broker_ip,
@@ -196,14 +168,9 @@ async fn main() {
                 task_id,
                 token,
             } => {
-                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
-                    Ok(bp) => bp,
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
-                        return;
-                    }
-                };
-                match check_task(
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
+                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let response = check_task(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
                     &task_id,
@@ -211,18 +178,13 @@ async fn main() {
                         .token
                         .expect("A token should have been provided on flag or config profile."),
                 )
-                .await
-                {
-                    Ok(resp) => {
-                        if let Some(err) = resp.error {
-                            eprintln!("{err}");
-                        } else if let Some(task) = resp.task {
-                            let de_task = serde_json::to_string_pretty(&task)
-                                .expect("Failed deserialization of task.");
-                            println!("{de_task}");
-                        }
-                    }
-                    Err(err) => eprintln!("ERROR: {err}"),
+                .await?;
+                if let Some(err) = response.error {
+                    eprintln!("{err}");
+                } else if let Some(task) = response.task {
+                    let de_task = serde_json::to_string_pretty(&task)
+                        .map_err(|_| CliError::DeserializeTask)?;
+                    println!("{de_task}");
                 }
             }
             TaskCommands::List {
@@ -230,29 +192,19 @@ async fn main() {
                 broker_api_port,
                 token,
             } => {
-                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
-                    Ok(bp) => bp,
-                    Err(err) => {
-                        eprintln!("ERROR: {err}");
-                        return;
-                    }
-                };
-                match list_tasks(
+                let tmp_profile = BrokerProfile::resolve(broker_ip, broker_api_port, token)
+                    .map_err(|_| CliError::BrokerProfileResolve)?;
+                let response = list_tasks(
                     &tmp_profile.broker_ip,
                     tmp_profile.broker_api_port,
                     &tmp_profile
                         .token
                         .expect("A token should have been provided on flag or config profile"),
                 )
-                .await
-                {
-                    Ok(resp) => {
-                        let de_tasks = serde_json::to_string_pretty(&resp)
-                            .expect("Failed deserialization of all tasks");
-                        println!("{de_tasks}");
-                    }
-                    Err(err) => eprintln!("ERROR: {err}"),
-                }
+                .await?;
+                let de_tasks = serde_json::to_string_pretty(&response)
+                    .map_err(|_| CliError::DeserializeTaskList)?;
+                println!("{de_tasks}");
             }
         },
         Commands::Auth { command } => match command {
@@ -311,4 +263,5 @@ async fn main() {
             println!("In the future, TUI will execute here.");
         }
     }
+    Ok(())
 }
