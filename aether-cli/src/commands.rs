@@ -208,5 +208,8 @@ pub enum AuthCommands {
     },
     Switch {
         profile: String,
+    },
+    Logout {
+        profile: String,
     }
 }

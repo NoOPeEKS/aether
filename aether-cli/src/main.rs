@@ -289,6 +289,20 @@ async fn main() {
                     eprintln!("Profile with name `{profile}` does not exist.");
                 }
             }
+            AuthCommands::Logout { profile } => {
+                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                if cfg.profiles.remove(&profile).is_some() {
+                    if let Some(ref act) = cfg.active
+                        && *act == profile
+                    {
+                        cfg.active = None;
+                    }
+                    cfg.save().expect("Could not save the profile switch.");
+                    println!("Profile {profile} removed.");
+                } else {
+                    eprintln!("Profile with name `{profile}` does not exist.");
+                }
+            }
         },
         Commands::Tui {
             broker_ip: _,
