@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"]}
 reqwest = { version = "0.12", features = ["json"]}
+dirs = "6.0.0"
 aether-core = { path = "../aether-core"}
 aether-worker = { path = "../aether-worker"}
 aether-broker = { path = "../aether-broker"}

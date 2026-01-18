@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod task;
+mod config;
 
 use aether_broker::DefaultBroker;
 use aether_core::auth::{Permission, User};
