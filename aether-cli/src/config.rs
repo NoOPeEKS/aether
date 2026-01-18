@@ -24,7 +24,7 @@ impl AetherConfig {
     const AETHER_REL_PATH: &str = ".aether/config.json";
 
     pub fn aether_path() -> Result<PathBuf, CliError> {
-        let home = dirs::home_dir().ok_or_else(|| CliError::InvalidHomeDir)?;
+        let home = dirs::home_dir().ok_or(CliError::InvalidHomeDir)?;
 
         Ok(home.join(Self::AETHER_REL_PATH))
     }
