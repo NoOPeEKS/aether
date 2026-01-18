@@ -1,5 +1,6 @@
 mod auth;
 mod commands;
+mod config;
 mod task;
 
 use aether_broker::DefaultBroker;
@@ -16,6 +17,7 @@ use uuid::Uuid;
 
 use crate::auth::get_login_jwt;
 use crate::commands::{AuthCommands, BrokerCommands, Cli, Commands, TaskCommands, WorkerCommands};
+use crate::config::{AetherConfig, BrokerProfile};
 use crate::task::{cancel_task, check_task, list_tasks, parse_task_file, send_task_to_broker};
 
 #[tokio::main]
@@ -125,15 +127,24 @@ async fn main() {
                         return;
                     }
                 };
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
                 match send_task_to_broker(
-                    &broker_ip,
-                    broker_api_port,
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
                     &task_b64,
                     &name,
                     priority,
                     gpu,
                     arch,
-                    &token,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config file"),
                 )
                 .await
                 {
@@ -155,55 +166,143 @@ async fn main() {
                 broker_api_port,
                 task_id,
                 token,
-            } => match cancel_task(&broker_ip, broker_api_port, &task_id, &token).await {
-                Ok(resp) => {
-                    println!("{}", resp.message);
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
+                match cancel_task(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &task_id,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile"),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        println!("{}", resp.message);
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
             TaskCommands::Check {
                 broker_ip,
                 broker_api_port,
                 task_id,
                 token,
-            } => match check_task(&broker_ip, broker_api_port, &task_id, token).await {
-                Ok(resp) => {
-                    if let Some(err) = resp.error {
-                        eprintln!("{err}");
-                    } else if let Some(task) = resp.task {
-                        let de_task = serde_json::to_string_pretty(&task)
-                            .expect("Failed deserialization of task.");
-                        println!("{de_task}");
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
                     }
+                };
+                match check_task(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &task_id,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile."),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        if let Some(err) = resp.error {
+                            eprintln!("{err}");
+                        } else if let Some(task) = resp.task {
+                            let de_task = serde_json::to_string_pretty(&task)
+                                .expect("Failed deserialization of task.");
+                            println!("{de_task}");
+                        }
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
             TaskCommands::List {
                 broker_ip,
                 broker_api_port,
                 token,
-            } => match list_tasks(&broker_ip, broker_api_port, &token).await {
-                Ok(resp) => {
-                    let de_tasks = serde_json::to_string_pretty(&resp)
-                        .expect("Failed deserialization of all tasks");
-                    println!("{de_tasks}");
+            } => {
+                let tmp_profile = match BrokerProfile::resolve(broker_ip, broker_api_port, token) {
+                    Ok(bp) => bp,
+                    Err(err) => {
+                        eprintln!("ERROR: {err}");
+                        return;
+                    }
+                };
+                match list_tasks(
+                    &tmp_profile.broker_ip,
+                    tmp_profile.broker_api_port,
+                    &tmp_profile
+                        .token
+                        .expect("A token should have been provided on flag or config profile"),
+                )
+                .await
+                {
+                    Ok(resp) => {
+                        let de_tasks = serde_json::to_string_pretty(&resp)
+                            .expect("Failed deserialization of all tasks");
+                        println!("{de_tasks}");
+                    }
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
-                Err(err) => eprintln!("ERROR: {err}"),
-            },
+            }
         },
         Commands::Auth { command } => match command {
             AuthCommands::Login {
+                profile,
                 broker_ip,
                 broker_api_port,
                 username,
                 password,
             } => match get_login_jwt(&broker_ip, broker_api_port, &username, &password).await {
                 Ok(resp) => match resp {
-                    LoginResponse::Ok { jwt } => println!("{jwt}"),
+                    LoginResponse::Ok { jwt } => {
+                        let mut cfg = AetherConfig::get()
+                            .expect("Could not open/generate ~/.aether/config.json.");
+                        let bp = BrokerProfile::new(&broker_ip, broker_api_port, &jwt);
+                        cfg.profiles.insert(profile.clone(), bp);
+                        cfg.active = Some(profile);
+                        cfg.save().expect(
+                            "Could not save profile configuration to ~/.aether/config.json",
+                        );
+                        println!("{jwt}");
+                    }
                     LoginResponse::Err { message } => eprintln!("ERROR: {message}"),
                 },
                 Err(err) => eprintln!("ERROR: {err}"),
             },
+            AuthCommands::Switch { profile } => {
+                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                if cfg.profiles.contains_key(&profile) {
+                    cfg.active = Some(profile.clone());
+                    cfg.save().expect("Could not save the profile switch.");
+                    println!("Auth profile switched to {profile}.");
+                } else {
+                    eprintln!("Profile with name `{profile}` does not exist.");
+                }
+            }
+            AuthCommands::Logout { profile } => {
+                let mut cfg = AetherConfig::get().expect("To be able to get the config file.");
+                if cfg.profiles.remove(&profile).is_some() {
+                    if let Some(ref act) = cfg.active
+                        && *act == profile
+                    {
+                        cfg.active = None;
+                    }
+                    cfg.save().expect("Could not save the profile switch.");
+                    println!("Profile {profile} removed.");
+                } else {
+                    eprintln!("Profile with name `{profile}` does not exist.");
+                }
+            }
         },
         Commands::Tui {
             broker_ip: _,

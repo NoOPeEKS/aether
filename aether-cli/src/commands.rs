@@ -83,14 +83,19 @@ pub enum WorkerCommands {
     },
 }
 
+// TODO: Right now, if none of all 3 of broker_ip, broker_api_port and token are provided,
+// defaults to use the config in ~/.aether/config.json, which is the intended way.
+// There's a fundamental problem with circular command dependencies that if either only
+// token or both broker_api_port and token are given, it will still let the command work,
+// but will use the config.json behind the scenes anyway.
 #[derive(Subcommand)]
 pub enum TaskCommands {
     Submit {
-        #[arg(long)]
-        broker_ip: String,
+        #[arg(long, requires_all = ["broker_api_port", "token"])]
+        broker_ip: Option<String>,
 
-        #[arg(long)]
-        broker_api_port: usize,
+        #[arg(long, requires = "token")]
+        broker_api_port: Option<usize>,
 
         #[arg(long)]
         task_file: String,
@@ -108,43 +113,43 @@ pub enum TaskCommands {
         arch: SupportedArchs,
 
         #[arg(long)]
-        token: String,
+        token: Option<String>,
     },
     Stop {
-        #[arg(long)]
-        broker_ip: String,
+        #[arg(long, requires_all = ["broker_api_port", "token"])]
+        broker_ip: Option<String>,
 
-        #[arg(long)]
-        broker_api_port: usize,
+        #[arg(long, requires = "token")]
+        broker_api_port: Option<usize>,
 
         #[arg(long)]
         task_id: String,
 
         #[arg(long)]
-        token: String,
+        token: Option<String>,
     },
     Check {
-        #[arg(long)]
-        broker_ip: String,
+        #[arg(long, requires_all = ["broker_api_port", "token"])]
+        broker_ip: Option<String>,
 
-        #[arg(long)]
-        broker_api_port: usize,
+        #[arg(long, requires = "token")]
+        broker_api_port: Option<usize>,
 
         #[arg(long)]
         task_id: String,
 
         #[arg(long)]
-        token: String,
+        token: Option<String>,
     },
     List {
-        #[arg(long)]
-        broker_ip: String,
+        #[arg(long, requires_all = ["broker_api_port", "token"])]
+        broker_ip: Option<String>,
+
+        #[arg(long, requires = "token")]
+        broker_api_port: Option<usize>,
 
         #[arg(long)]
-        broker_api_port: usize,
-
-        #[arg(long)]
-        token: String,
+        token: Option<String>,
     },
 }
 
@@ -187,6 +192,9 @@ pub enum AuthCommands {
     #[command(about = "Log in with the provided credentials and save the JWT token.")]
     Login {
         #[arg(long)]
+        profile: String,
+
+        #[arg(long)]
         broker_ip: String,
 
         #[arg(long)]
@@ -198,4 +206,10 @@ pub enum AuthCommands {
         #[arg(long)]
         password: String,
     },
+    Switch {
+        profile: String,
+    },
+    Logout {
+        profile: String,
+    }
 }
