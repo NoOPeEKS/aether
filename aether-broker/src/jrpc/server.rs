@@ -82,22 +82,27 @@ async fn handle_timeouts<S: Storage>(state: Arc<BrokerState<S>>) {
                     "[WARNING] Task {} exceeded maximum execution time. Cancelling...",
                     task_id
                 );
-                // TODO: Check this unwrap, though it should never fail.
+                let value_params = match serde_json::to_value(StopExecutionNotificationParams {
+                    task_id: *task_id,
+                }) {
+                    Ok(v) => v,
+                    // If anything happens during deserialization, just continue and retry later.
+                    Err(_) => continue,
+                };
                 let notif = JsonRpcNotification {
                     jsonrpc: "2.0".into(),
                     method: "stop_execution".into(),
-                    params: serde_json::to_value(StopExecutionNotificationParams {
-                        task_id: *task_id,
-                    })
-                    .unwrap(),
+                    params: value_params,
                 };
                 let worker_id = &lease.worker_id;
                 if let Some(wsession) = state.worker_sessions.read().await.get(worker_id) {
-                    // TODO: Check this unwraps.
-                    wsession
-                        .sender
-                        .send(format_jrpc_message(notif).unwrap())
-                        .unwrap();
+                    let msg = match format_jrpc_message(notif) {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    // Here we don't care if it could send it or not bc if it couldn't, we'll just
+                    // try it again on next iter of the loop.
+                    _ = wsession.sender.send(msg)
                 }
             }
         }

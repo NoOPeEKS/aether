@@ -284,7 +284,6 @@ async fn handle_report_result<S: Storage>(
                             task_id: task_result.id,
                         })?,
                     };
-                    // TODO: Handle this better.
                     session.sender.send(format_jrpc_message(notif)?)?;
                 }
             }
@@ -353,8 +352,17 @@ async fn handle_worker_shutdown<S: Storage>(
                         capabilities: res.capabilities.clone(),
                     };
                     res.status = TaskStatus::Cancelled;
-                    // TODO: Check this unwrap.
-                    state.storage.enqueue_task(new_task).await.unwrap();
+                    match state.storage.enqueue_task(new_task).await {
+                        Ok(()) => {}
+                        Err(_) => {
+                            error!(
+                                "[ERROR] Could not requeue task {} after worker shutdown.",
+                                &task_id
+                            );
+                            // Early return to avoid wrong state.
+                            return;
+                        }
+                    }
                     state.storage.store_result(res.id, res).await;
                     info!(
                         "[INFO] Requeued task {} of shutdown worker {}",

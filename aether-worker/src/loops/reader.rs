@@ -113,13 +113,22 @@ async fn handle_server_message(message: String, state: Arc<WorkerState>) {
         }
     } else {
         // It was a notification.
-        // TODO: Check these unwraps.
-        let notification: JsonRpcNotification = serde_json::from_value(message).unwrap();
+        let notification = match serde_json::from_value::<JsonRpcNotification>(message) {
+            Ok(n) => n,
+            // If any error happens during deserialization, we just ignore the notification
+            // altogether.
+            Err(_) => return,
+        };
 
         // TODO: Implement task cancellation flow with a channel.
         if &notification.method == "stop_execution" {
-            let params: StopExecutionNotificationParams =
-                serde_json::from_value(notification.params).unwrap();
+            let params = match serde_json::from_value::<StopExecutionNotificationParams>(
+                notification.params,
+            ) {
+                Ok(p) => p,
+                // Same as before, if anything happens during deser, just ignore notif.
+                Err(_) => return,
+            };
             if let Some(running) = state.running_tasks.write().await.remove(&params.task_id) {
                 _ = running.cancel_tx.send(());
                 tokio::spawn(async move {

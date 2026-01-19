@@ -294,11 +294,11 @@ impl Storage for RedisStorage {
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: None,
-                        status: TaskStatus::Queued,
+                        status: TaskStatus::Running,
                         capabilities: task.capabilities.clone(),
                     };
-                    // TODO: Check this unwrap.
-                    let result_json = serde_json::to_string(&result).unwrap();
+                    let result_json = serde_json::to_string(&result)
+                        .expect("This serialization should never fail");
                     match conn.set(result_key, result_json).await {
                         Ok(_) => {}
                         Err(_) => continue,
@@ -306,11 +306,11 @@ impl Storage for RedisStorage {
                     let lease_key = format!("leases:{}", task.id);
                     let lease = Lease {
                         worker_id: worker_id.to_owned(),
-                        attempts: 1,
+                        attempts: 0,
                         start_time: SystemTime::now(),
                     };
-                    // TODO: Check this unwrap.
-                    let lease_json = serde_json::to_string(&lease).unwrap();
+                    let lease_json = serde_json::to_string(&lease)
+                        .expect("This serialization should never fail");
                     match conn.set(lease_key, lease_json).await {
                         Ok(_) => {}
                         Err(_) => continue,
@@ -404,8 +404,11 @@ impl Storage for RedisStorage {
         let result_key = format!("task_results:{task_id}");
         let task_res = conn.get(result_key).await.unwrap_or(None);
         if let Some(tr) = task_res {
-            // TODO: Check this unwrap.
-            let res: TaskResult = serde_json::from_str(&tr).unwrap();
+            let res = match serde_json::from_str::<TaskResult>(&tr) {
+                Ok(r) => r,
+                // If we cant deserialize, return None i guess...
+                Err(_) => return None,
+            };
             return Some(res);
         }
         None

@@ -157,7 +157,7 @@ async fn execute_task_select(
 
                     let task_result = TaskResult {
                         id: task.id,
-                        owner_id: task.id,
+                        owner_id: task.owner_id,
                         name: task.name.clone(),
                         code_b64: task.code_b64.clone(),
                         result: Some(py_res_val),
