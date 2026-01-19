@@ -12,10 +12,11 @@ A blazingly fast distributed task executor for Python scripts. Aether provides a
 - 🐍 **Python Focused**: Execute Python scripts with proper isolation and resource management.
 - 🔄 **Priority Queuing**: Support for high, medium, and low priority task scheduling.
 - 🎯 **Smart Matching**: Automatic worker assignment based on GPU availability and CPU architecture.
-- 🌐 **HTTP API**: RESTful interface for task submission and monitoring.
+- 🌐 **HTTP API**: RESTful interface for interacting with the broker.
 - 🔗 **JRPC Protocol**: JSON-RPC communication between brokers and workers.
-- 🛡️ **Graceful Shutdown**: Clean task handling during system interruptions.
-- 🖥️ **CLI Tools**: Intuitive command-line interface for all operations.
+- 🛡️ **Auto-reconnection logic**: Don't worry if your broker or workers crash.
+- 🔐 **Authentication & Authorization**: JWT authentication and permissions-based authorization.
+- 🖥️ **CLI**: Intuitive command-line interface for all operations.
 
 ## 📋 Table of Contents
 
@@ -57,16 +58,24 @@ time.sleep(1)
 print("Task completed successfully!")
 ```
 
-Submit it:
+Aether authenticates all of their routes with JWT except the health and login endpoints.
+
+Create a profile with the following command:
+```bash
+aether auth login --profile test --broker-ip 127.0.0.1 --broker-api-port 8080 --username admin --password admin
+```
+This sets the `test` profile as the active profile.
+
+Submit the task:
 
 ```bash
-aether task submit --broker-ip 127.0.0.1 --broker-api-port 8080 --task-file hello.py --name "Hello World"
+aether task submit --task-file hello.py --name "Hello World"
 ```
 
 ### 4. Check Status
 
 ```bash
-aether task check --broker-ip 127.0.0.1 --broker-api-port 8080 --task-id <task-uuid>
+aether task check --task-id <task-uuid>
 ```
 
 Output:
@@ -133,7 +142,7 @@ cargo install aether-cli
 
 ```bash
 # Start broker
-aether broker start --api-port 8080 --jrpc-port 9090
+aether broker start --api-port 8080 --jrpc-port 9090 (optional --redis-ip 127.0.0.1 --redis-port 6379)
 ```
 
 ### Worker Commands
@@ -145,25 +154,50 @@ aether worker start --worker-id gpu-worker --broker-ip 10.0.0.1 --broker-port 90
 
 ### Task Management
 
+> [!NOTE]
+> All commands make use of the active profile configuration by default.
+> To bypass the active profile without switching you can inline the arguments `--broker-ip`, `--broker-api-port` and `--token`.
+
 ```bash
 # Submit task
-aether task submit --broker-ip 127.0.0.1 --broker-api-port 8080 --task-file script.py --name "Data Analysis"
+aether task submit --task-file script.py --name "Data Analysis"
 
 # Check status
-aether task check --broker-ip 127.0.0.1 --broker-api-port 8080 --task-id 550e8400-e29b-41d4-a716-446655440000
+aether task check --task-id 550e8400-e29b-41d4-a716-446655440000
 
-# List all tasks (future feature)
-aether task list --broker-ip 127.0.0.1 --broker-api-port 8080
+# List all tasks 
+aether task list
+
+# Stop a task
+aether task stop --task-id 550e8400-e29b-41d4-a716-446655440000
+```
+
+### Authentication
+```bash
+# Login and set as active profile (JWT token will be printed to stdout)
+aether auth login --profile test --broker-ip 127.0.0.1 --broker-api-port 8080 --username admin --password admin
+
+# Switch active profile
+aether auth switch --profile prod
+
+# Logout and delete profile
+aether auth logout --profile test
 ```
 
 ## 🔌 API
 
 ### Endpoints
 
-- `POST /api/v1/tasks` - Submit a new task
-- `GET /api/v1/tasks/{id}` - Get task status and result
-- `GET /api/v1/tasks` - List all tasks
+#### Public
 - `GET /api/v1/health` - Health check
+- `POST /api/v1/auth/login` - Log in as a user and get a JWT
+
+#### Authenticated
+- `POST /api/v1/tasks` - Submit a new task
+- `GET /api/v1/tasks` - List all tasks
+- `GET /api/v1/tasks/{id}` - Get task status and result
+- `POST /api/v1/tasks/{id}/cancel` - Cancel a given task execution
+- `POST /api/v1/users` - Create a new user. Requires admin privileges.
 
 ## 🤝 Contributing
 
@@ -174,7 +208,3 @@ aether task list --broker-ip 127.0.0.1 --broker-api-port 8080
 ## 📄 License
 
 Licensed under the Apache 2.0 License. See [LICENSE](LICENSE) for details.
-
----
-
-Built with ❤️ using Rust.
