@@ -10,6 +10,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::net::tcp::OwnedReadHalf;
 
+use super::TestBrokerWorkflow;
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum JsonRpcMessage {
     Request(JsonRpcRequest),
@@ -41,6 +43,7 @@ impl ManualRpcServer {
 pub async fn handle_connection(
     stream: TcpStream,
     handlers: Arc<HashMap<String, MethodHandler>>,
+    workflow: Arc<std::sync::Mutex<TestBrokerWorkflow>>,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -76,8 +79,37 @@ pub async fn handle_connection(
                         },
                     };
 
+                    // If fetch_task and cancel, prepare stop_execution
+                    let mut stop_msg = None;
+                    if request.method == "fetch_task" {
+                        let wf = workflow.lock().unwrap();
+                        if matches!(*wf, TestBrokerWorkflow::FetchTaskAndCancel(_)) {
+                            if let Some(ref result) = response.result {
+                                if let Some(task_val) = result.get("task") {
+                                    if let Some(id) = task_val.get("id") {
+                                        if let Some(task_id_str) = id.as_str() {
+                                            if let Ok(task_id) = uuid::Uuid::parse_str(task_id_str)
+                                            {
+                                                let stop_notif = JsonRpcNotification {
+                                                    jsonrpc: "2.0".into(),
+                                                    method: "stop_execution".into(),
+                                                    params: serde_json::json!({"task_id": task_id}),
+                                                };
+                                                stop_msg = Some(format_jrpc_message(stop_notif)?);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let msg = format_jrpc_message(response)?;
                     writer.write_all(msg.as_bytes()).await?;
+
+                    if let Some(stop_msg) = stop_msg {
+                        writer.write_all(stop_msg.as_bytes()).await?;
+                    }
                 }
                 JsonRpcMessage::Notification(notification) => {
                     if let Some(handler) = handlers.get(&notification.method) {
