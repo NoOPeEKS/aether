@@ -1,6 +1,7 @@
+use std::sync::{Arc, Mutex};
+
 use aether_core::jrpc::{JsonRpcError, JsonRpcErrorCode};
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
@@ -117,7 +118,7 @@ impl TestBroker {
             events.lock().unwrap().push(BrokerEvent::HeartbeatReceived);
             // Notifications don't expect response, but handler returns value
             // gotta do this hack bc of the way we coded this.
-            Ok(serde_json::json!({})) 
+            Ok(serde_json::json!({}))
         });
 
         let events = Arc::clone(&self.events);

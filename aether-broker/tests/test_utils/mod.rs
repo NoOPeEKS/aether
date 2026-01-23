@@ -1,9 +1,10 @@
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use aether_core::capabilities::{CPUArchitecture, WorkerCapabilities};
 use aether_core::jrpc::{JsonRpcNotification, JsonRpcRequest};
 use aether_core::task::TaskResult;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::io::{BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;

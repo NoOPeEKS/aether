@@ -2,18 +2,19 @@ mod test_utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::test_utils::BrokerEvent;
-
-    use super::test_utils::{
-        TestBroker, TestBrokerWorkflow, TestFetchTaskResponse, TestRegisterBrokerResponse,
-    };
     use std::sync::Once;
+
     use aether_core::capabilities::{CPUArchitecture, TaskCapabilities, WorkerCapabilities};
     use aether_core::task::{Task, TaskPriority};
     use aether_worker::Worker;
     use base64::prelude::*;
     use tokio::time::Duration;
     use uuid::Uuid;
+
+    use super::test_utils::{
+        TestBroker, TestBrokerWorkflow, TestFetchTaskResponse, TestRegisterBrokerResponse,
+    };
+    use crate::test_utils::BrokerEvent;
 
     static INIT: Once = Once::new();
 

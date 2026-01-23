@@ -10,9 +10,8 @@ static INIT: Once = Once::new();
 
 mod test_utils;
 use aether_core::traits::Storage;
-use test_utils::{
-    TestWorker, TestWorkerWorkflow, WorkerAction, WorkerEvent, jrpc::get_random_available_port,
-};
+use test_utils::jrpc::get_random_available_port;
+use test_utils::{TestWorker, TestWorkerWorkflow, WorkerAction, WorkerEvent};
 
 fn init_tracing() {
     INIT.call_once(|| {
