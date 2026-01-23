@@ -1,11 +1,10 @@
 use aether_core::capabilities::{CPUArchitecture, WorkerCapabilities};
-use aether_core::jrpc::{
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, format_jrpc_message,
-};
+use aether_core::jrpc::{JsonRpcNotification, JsonRpcRequest};
 use aether_core::task::TaskResult;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
+use std::time::Duration;
+use tokio::io::{BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 
@@ -15,9 +14,6 @@ use jrpc::{read_jrpc_response, send_jrpc_notification, send_jrpc_request};
 
 #[derive(Clone)]
 pub enum TestWorkerWorkflow {
-    RegisterOnly,
-    RegisterAndFetch(TestFetchResponse),
-    RegisterFetchHeartbeat,
     Custom(Vec<WorkerAction>),
 }
 
@@ -30,12 +26,6 @@ pub enum WorkerAction {
     Shutdown,
 }
 
-#[derive(Clone)]
-pub enum TestFetchResponse {
-    Task(aether_core::task::Task),
-    NoTask,
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum WorkerEvent {
     SentRegister,
@@ -43,6 +33,7 @@ pub enum WorkerEvent {
     SentFetch,
     ReceivedTask,
     ReceivedNoTask,
+    FetchError,
     SentHeartbeat,
     SentReportResult,
     SentShutdown,
@@ -87,23 +78,6 @@ impl TestWorker {
                 };
 
                 match tw.workflow {
-                    TestWorkerWorkflow::RegisterOnly => {
-                        tw.register_worker(&mut reader, &mut writer).await;
-                    }
-                    TestWorkerWorkflow::RegisterAndFetch(ref resp) => {
-                        tw.register_worker(&mut reader, &mut writer).await;
-                        tw.fetch_task(&mut reader, &mut writer, Some(resp.clone()))
-                            .await;
-                    }
-                    TestWorkerWorkflow::RegisterFetchHeartbeat => {
-                        tw.register_worker(&mut reader, &mut writer).await;
-                        tw.fetch_task(&mut reader, &mut writer, None).await;
-                        // Loop heartbeat
-                        loop {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                            tw.send_heartbeat(&mut writer).await;
-                        }
-                    }
                     TestWorkerWorkflow::Custom(ref actions) => {
                         for action in actions.clone() {
                             match action {
@@ -111,17 +85,18 @@ impl TestWorker {
                                     tw.register_worker(&mut reader, &mut writer).await;
                                 }
                                 WorkerAction::Fetch => {
-                                    tw.fetch_task(&mut reader, &mut writer, None).await;
+                                    tw.fetch_task(&mut reader, &mut writer).await;
                                 }
                                 WorkerAction::Heartbeat => {
                                     tw.send_heartbeat(&mut writer).await;
                                 }
                                 WorkerAction::ReportResult(result) => {
                                     tw.report_result(&mut writer, result).await;
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
                                 }
                                 WorkerAction::Shutdown => {
                                     tw.shutdown(&mut writer).await;
-                                    break;
+                                    tokio::time::sleep(Duration::from_secs(2)).await;
                                 }
                             }
                         }
@@ -150,13 +125,13 @@ impl TestWorker {
                 "capabilities": self.capabilities,
             }),
         };
-        if send_jrpc_request(writer, request).await.is_ok() {
-            if read_jrpc_response(reader).await.is_ok() {
-                self.events
-                    .lock()
-                    .unwrap()
-                    .push(WorkerEvent::ReceivedRegisterResponse);
-            }
+        if send_jrpc_request(writer, request).await.is_ok()
+            && read_jrpc_response(reader).await.is_ok()
+        {
+            self.events
+                .lock()
+                .unwrap()
+                .push(WorkerEvent::ReceivedRegisterResponse);
         }
     }
 
@@ -164,7 +139,6 @@ impl TestWorker {
         &self,
         reader: &mut BufReader<ReadHalf<TcpStream>>,
         writer: &mut WriteHalf<TcpStream>,
-        expected: Option<TestFetchResponse>,
     ) {
         self.events.lock().unwrap().push(WorkerEvent::SentFetch);
         let request = JsonRpcRequest {
@@ -175,11 +149,27 @@ impl TestWorker {
                 "worker_id": self.worker_id,
             }),
         };
-        if send_jrpc_request(writer, request).await.is_ok() {
-            // For simplicity, assume we receive a response
-            // In real impl, check if task or none
-            if expected.is_some() {
-                self.events.lock().unwrap().push(WorkerEvent::ReceivedTask);
+        if send_jrpc_request(writer, request).await.is_ok()
+            && let Ok(response) = read_jrpc_response(reader).await
+        {
+            if response.error.is_some() {
+                self.events.lock().unwrap().push(WorkerEvent::FetchError);
+            } else if let Some(serde_json::Value::Object(obj)) = &response.result {
+                if let Some(task_val) = obj.get("task") {
+                    if task_val.is_null() {
+                        self.events
+                            .lock()
+                            .unwrap()
+                            .push(WorkerEvent::ReceivedNoTask);
+                    } else {
+                        self.events.lock().unwrap().push(WorkerEvent::ReceivedTask);
+                    }
+                } else {
+                    self.events
+                        .lock()
+                        .unwrap()
+                        .push(WorkerEvent::ReceivedNoTask);
+                }
             } else {
                 self.events
                     .lock()
