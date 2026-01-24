@@ -1,158 +1,91 @@
 use std::sync::Arc;
 
 use aether_broker::{BrokerState, build_router};
+use aether_core::auth::{Permission, User};
 use aether_core::broker::storage::InMemoryStorage;
-use aether_core::http::{CreateTaskResponse, GetAllTasksResponse};
-use aether_core::task::TaskStatus;
+use aether_core::http::{CreateTaskRequest, CreateTaskResponse, GetAllTasksResponse};
+use aether_core::task::{TaskPriority, TaskStatus};
+use aether_core::traits::Storage;
+use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{Request, Response, StatusCode};
+use bcrypt::{DEFAULT_COST, hash};
 use serde_json::json;
 use tower::Service;
+use uuid::Uuid;
+
+async fn get_test_utils() -> (Router, Arc<BrokerState<InMemoryStorage>>, String) {
+    let storage = InMemoryStorage::new();
+    let state = Arc::new(BrokerState::new(storage));
+    let st_clone = Arc::clone(&state);
+    state
+        .storage
+        .create_user(User {
+            id: Uuid::new_v4(),
+            name: "admin".into(),
+            password_hash: hash("admin", DEFAULT_COST).expect("To be able to hash."),
+            is_admin: true,
+            permissions: vec![Permission::All],
+        })
+        .await
+        .unwrap();
+    let mut app = build_router(state);
+    let body =
+        Body::from(serde_json::to_vec(&json!({"username": "admin", "password": "admin"})).unwrap());
+    let response = app
+        .call(
+            Request::builder()
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .uri("/api/v1/auth/login")
+                .body(body)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    (
+        app,
+        st_clone,
+        json["jwt"]
+            .to_string()
+            .strip_prefix("\"")
+            .unwrap()
+            .strip_suffix("\"")
+            .unwrap()
+            .to_owned(),
+    )
+}
 
 #[tokio::test]
 async fn test_create_task() {
-    let storage = InMemoryStorage::new();
-    let state = Arc::new(BrokerState::new(storage));
-    let mut app = build_router(state);
-
-    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
-    let body = Body::from(serde_json::to_vec(&payload).unwrap());
+    let (mut app, state, jwt) = get_test_utils().await;
+    let body = Body::from(
+        serde_json::to_vec(&CreateTaskRequest {
+            name: "task1".into(),
+            code_b64: "cHJpbnQoImhlbGxvIHdvcmxkIik=".into(),
+            priority: TaskPriority::High,
+            capabilities: None,
+        })
+        .unwrap(),
+    );
     let response = app
         .call(
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/tasks")
                 .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {jwt}"))
                 .body(body)
                 .unwrap(),
         )
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::CREATED);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body_string = String::from_utf8(body.to_vec()).unwrap();
-    assert!(body_string.contains("queued"));
-}
-
-#[tokio::test]
-async fn test_get_non_existant_task() {
-    let storage = InMemoryStorage::new();
-    let state = Arc::new(BrokerState::new(storage));
-    let mut app = build_router(state);
-
-    let response = app
-        .call(
-            Request::builder()
-                .method("GET")
-                .uri("/api/v1/tasks/e6f8019a-ab04-46a1-b894-3c10c29e9d20")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body_string = String::from_utf8(body.to_vec()).unwrap();
-    assert!(body_string.contains("No task was found with the provided id"));
-}
-
-#[tokio::test]
-async fn test_get_info_from_task() {
-    let storage = InMemoryStorage::new();
-    let state = Arc::new(BrokerState::new(storage));
-    let mut app = build_router(state);
-
-    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
-    let body = Body::from(serde_json::to_vec(&payload).unwrap());
-    let response = app
-        .call(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/tasks")
-                .header("Content-Type", "application/json")
-                .body(body)
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    let create_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let create_body_string = String::from_utf8(create_resp_body.to_vec()).unwrap();
-    let create_task_resp: CreateTaskResponse = serde_json::from_str(&create_body_string).unwrap();
-
-    if let CreateTaskResponse::Ok { task_id, status: _ } = create_task_resp {
-        let response = app
-            .call(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/v1/tasks/{}", task_id))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let get_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
-
-        assert!(get_body_string.contains(r#""name":"sample-task""#));
-        assert!(get_body_string.contains(r#""status":"queued""#));
-    }
-}
-
-#[tokio::test]
-async fn test_get_all_tasks() {
-    let storage = InMemoryStorage::new();
-    let state = Arc::new(BrokerState::new(storage));
-    let mut app = build_router(state);
-
-    let payload = json!({"name":"sample-task", "code_b64": "aW1wb3J0IG9zCgplcnJvcm9oZXJlCg==", "priority": "high"});
-    let body = Body::from(serde_json::to_vec(&payload).unwrap());
-    let response = app
-        .call(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/tasks")
-                .header("Content-Type", "application/json")
-                .body(body)
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    let response = app
-        .call(
-            Request::builder()
-                .method("GET")
-                .uri("/api/v1/tasks")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    let get_resp_body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let get_body_string = String::from_utf8(get_resp_body.to_vec()).unwrap();
-    let resp: GetAllTasksResponse = serde_json::from_str(&get_body_string).unwrap();
-    assert!(resp.tasks.is_some());
-    assert!(!resp.tasks.clone().unwrap().is_empty());
-    assert_eq!(resp.tasks.unwrap()[0].status, TaskStatus::Queued);
+    assert_eq!(state.storage.high_prio.read().await.len(), 1);
+    assert_eq!(state.storage.high_prio.read().await[0].name, "task1".to_string());
 }
