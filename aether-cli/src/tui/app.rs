@@ -6,6 +6,7 @@ use crate::tui::ui::ui;
 pub struct AppState {
     pub should_quit: bool,
     pub http_client: reqwest::Client,
+    pub user_token: Option<String>,
 }
 
 pub struct App {
@@ -18,6 +19,7 @@ impl App {
             state: AppState {
                 should_quit: false,
                 http_client: reqwest::Client::new(),
+                user_token: None,
             },
         }
     }
