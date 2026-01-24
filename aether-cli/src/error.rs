@@ -53,4 +53,7 @@ pub enum CliError {
 
     #[error("Could not save config to ~/.aether/config.json. Reason: {0}")]
     SaveConfigError(String),
+
+    #[error("An error occured.")]
+    TuiError
 }

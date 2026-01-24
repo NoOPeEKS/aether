@@ -4,6 +4,7 @@ mod config;
 mod error;
 mod handlers;
 mod task;
+mod tui;
 
 use clap::Parser;
 
@@ -13,6 +14,7 @@ use crate::handlers::{
     handle_auth_login, handle_auth_logout, handle_auth_switch, handle_broker_start,
     handle_task_check, handle_task_list, handle_task_stop, handle_task_submit, handle_worker_start,
 };
+use crate::tui::run_tui;
 
 #[tokio::main]
 async fn main() -> Result<(), CliError> {
@@ -94,7 +96,7 @@ async fn main() -> Result<(), CliError> {
             broker_ip: _,
             broker_port: _,
         } => {
-            println!("In the future, TUI will execute here.");
+            run_tui().await.map_err(|_| CliError::TuiError)?;
         }
     }
     Ok(())
