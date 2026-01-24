@@ -23,7 +23,7 @@ pub enum TaskPriority {
     Low,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TaskResult {
     pub id: Uuid,
     pub owner_id: Uuid,

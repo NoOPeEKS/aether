@@ -14,6 +14,7 @@ pub struct CreateTaskRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum CreateTaskResponse {
     Ok { task_id: Uuid, status: TaskStatus },
     Error { message: String },
@@ -45,6 +46,7 @@ pub struct LoginRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum LoginResponse {
     Ok { jwt: String },
     Err { message: String },

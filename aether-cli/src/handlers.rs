@@ -57,6 +57,9 @@ pub async fn handle_broker_start(
             .create_user(admin_user)
             .await
             .map_err(|_| CliError::SuperUserCreationError)?;
+        warn!(
+            "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+        );
         let broker = DefaultBroker::new(storage);
         broker
             .run(api_port, jrpc_port)

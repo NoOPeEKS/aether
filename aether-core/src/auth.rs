@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Clone, Eq, Hash, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Eq, Hash, PartialEq, Debug)]
 pub struct User {
     pub id: Uuid,
     pub name: String,
@@ -10,7 +10,7 @@ pub struct User {
     pub permissions: Vec<Permission>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Hash, Eq, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Hash, Eq, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
     CreateUser,

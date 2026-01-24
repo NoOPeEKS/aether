@@ -19,5 +19,5 @@ aether-core = { path = "../aether-core" }
 tokio-util = "0.7.17"
 
 [dev-dependencies]
-reqwest = "0.12"
-aether-broker = { path = "../aether-broker" }
+ reqwest = "0.12"
+ aether-broker = { path = "../aether-broker" }

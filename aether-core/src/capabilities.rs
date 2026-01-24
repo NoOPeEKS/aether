@@ -6,7 +6,7 @@ pub struct WorkerCapabilities {
     pub arch: CPUArchitecture,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TaskCapabilities {
     pub gpu: bool,
     pub arch: CPUArchitecture,

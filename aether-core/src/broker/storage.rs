@@ -26,7 +26,7 @@ pub struct WorkerSession {
     pub connected_at: tokio::time::Instant,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InMemoryStorage {
     pub high_prio: RwLock<VecDeque<Task>>,
     pub mid_prio: RwLock<VecDeque<Task>>,
