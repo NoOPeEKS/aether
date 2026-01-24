@@ -157,7 +157,7 @@ pub async fn cancel_task_handler<S: Storage>(
     match serde_json::to_value(StopExecutionNotificationParams { task_id }) {
         Ok(stop_exec_params) => {
             if let Some(tr) = state.storage.get_task_result(task_id).await {
-                if tr.owner_id != user.id || !user.is_admin {
+                if tr.owner_id != user.id && !user.is_admin {
                     return StatusCode::UNAUTHORIZED.into_response();
                 }
                 match tr.status {
@@ -175,8 +175,18 @@ pub async fn cancel_task_handler<S: Storage>(
                         )
                         .into_response();
                     }
+                    TaskStatus::Queued => {
+                        let mut result = tr;
+                        result.status = TaskStatus::Cancelled;
+                        state.storage.store_result(task_id, result).await;
+                        return format_cancel_response(
+                            StatusCode::OK,
+                            format!("Task {task_id} cancelled successfully.").as_ref(),
+                        )
+                        .into_response();
+                    }
                     _ => {
-                        // If its on any state that is not completed or cancelled, means we have a
+                        // If its on any state that is not completed or cancelled or queued, means we have a
                         // lease up and we can know which worker is running it.
                         let lease = state.storage.get_lease(&task_id).await;
                         if let Some(lease) = lease
