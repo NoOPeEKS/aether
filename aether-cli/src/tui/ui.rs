@@ -1,9 +1,12 @@
-use crate::tui::{app::App, widgets::ProfileSection};
+use crate::tui::{
+    app::{App, Panel},
+    widgets::{MenuSection, ProfileSection},
+};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Style, palette::tailwind},
-    widgets::{Block, BorderType, Paragraph},
+    widgets::{Block, Paragraph},
 };
 
 pub fn ui(frame: &mut Frame, app: &App) {
@@ -62,12 +65,9 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     let _rest_area = main_area[1];
 
-    let profile = ProfileSection::new(&app.state.config);
+    let profile = ProfileSection::new(&app.state.config, app.state.current_panel == Panel::Profile);
     frame.render_widget(profile, navbar_area[0]);
 
-    let navbar_block = Block::bordered()
-        .style(Style::default())
-        .title("Menu")
-        .border_type(BorderType::Rounded);
-    frame.render_widget(navbar_block, navbar_area[1]);
+    let menu_section = MenuSection::new(app.state.current_panel == Panel::Menu);
+    frame.render_widget(menu_section, navbar_area[1]);
 }
