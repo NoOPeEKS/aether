@@ -1,12 +1,12 @@
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use futures::StreamExt;
 
-use crate::tui::ui::ui;
+use crate::{config::AetherConfig, tui::ui::ui};
 
 pub struct AppState {
     pub should_quit: bool,
     pub http_client: reqwest::Client,
-    pub user_token: Option<String>,
+    pub config: AetherConfig,
 }
 
 pub struct App {
@@ -19,7 +19,7 @@ impl App {
             state: AppState {
                 should_quit: false,
                 http_client: reqwest::Client::new(),
-                user_token: None,
+                config: AetherConfig::get().expect("Must have at least a profile logged in!"),
             },
         }
     }

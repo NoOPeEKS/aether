@@ -92,10 +92,7 @@ async fn main() -> Result<(), CliError> {
             AuthCommands::Switch { profile } => handle_auth_switch(profile).await?,
             AuthCommands::Logout { profile } => handle_auth_logout(profile).await?,
         },
-        Commands::Tui {
-            broker_ip: _,
-            broker_port: _,
-        } => {
+        Commands::Tui => {
             run_tui().await.map_err(|_| CliError::TuiError)?;
         }
     }

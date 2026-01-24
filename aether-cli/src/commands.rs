@@ -35,13 +35,7 @@ pub enum Commands {
     #[command(
         about = "Launch an interactive terminal user interface for handling an Aether cluster."
     )]
-    Tui {
-        #[arg(long)]
-        broker_ip: String,
-
-        #[arg(long)]
-        broker_port: usize,
-    },
+    Tui,
 }
 
 #[derive(Subcommand)]
