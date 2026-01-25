@@ -45,13 +45,15 @@ impl<'a> Widget for ProfileSection<'a> {
 
                 Paragraph::new(lines).block(block).render(area, buf);
             } else {
-                Paragraph::new("No active profile.\nPlease select one.")
+                Paragraph::new("No active profile.\nPlease select one before launching app.")
                     .block(block)
+                .wrap(Wrap { trim: true })
                     .render(area, buf);
             }
         } else {
-            Paragraph::new("No active profile.\nPlease select one.")
+            Paragraph::new("No active profile.\nPlease select one before launching app.")
                 .block(block)
+                .wrap(Wrap { trim: true })
                 .render(area, buf);
         }
     }
