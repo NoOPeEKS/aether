@@ -1,9 +1,9 @@
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, BorderType, Paragraph, Widget},
+    widgets::{Block, BorderType, Clear, Paragraph, Widget},
 };
 
 use crate::config::AetherConfig;
@@ -80,5 +80,55 @@ impl Widget for MenuSection {
             .border_type(BorderType::Rounded)
             .border_style(border_style)
             .render(area, buf);
+    }
+}
+
+pub struct ProfileSelectionPopup<'a> {
+    cfg: &'a AetherConfig,
+}
+
+impl<'a> ProfileSelectionPopup<'a> {
+    pub fn new(cfg: &'a AetherConfig) -> Self {
+        Self { cfg }
+    }
+    pub fn max_line_len(&self) -> Option<usize> {
+        if self.cfg.profiles.len() < 1 {
+            return None;
+        }
+        self.cfg
+            .profiles
+            .iter()
+            .map(|(name, prof)| {
+                format!("{name}: {}:{}", prof.broker_ip, prof.broker_api_port).len()
+            })
+            .max()
+    }
+    pub fn num_profiles(&self) -> u16 {
+        self.cfg.profiles.len() as u16
+    }
+}
+
+impl<'a> Widget for ProfileSelectionPopup<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Clear.render(area, buf);
+        let block = Block::bordered()
+            .style(Style::default())
+            .title("Select profile")
+            .title_alignment(Alignment::Center)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().light_green());
+
+        let lines: Vec<Line<'_>> = self
+            .cfg
+            .profiles
+            .iter()
+            .map(|(name, pinfo)| {
+                Line::from(vec![
+                    name.as_str().yellow(),
+                    Span::from(format!(": {}:{}", pinfo.broker_ip, pinfo.broker_api_port)),
+                ])
+            })
+            .collect();
+        Paragraph::new(lines).block(block).render(area, buf);
     }
 }

@@ -4,6 +4,12 @@ use futures::StreamExt;
 use crate::{config::AetherConfig, tui::ui::ui};
 
 #[derive(PartialEq)]
+pub enum Action {
+    ProfileSelection,
+    None,
+}
+
+#[derive(PartialEq)]
 pub enum Panel {
     Menu,
     Profile,
@@ -28,6 +34,7 @@ pub struct AppState {
     pub config: AetherConfig,
     pub current_panel: Panel,
     pub mode: Mode,
+    pub action: Action,
 }
 
 pub struct App {
@@ -43,6 +50,7 @@ impl App {
                 config: AetherConfig::get().expect("Must have at least a profile logged in!"),
                 current_panel: Panel::Menu,
                 mode: Mode::Default,
+                action: Action::None,
             },
         }
     }
@@ -67,6 +75,7 @@ impl App {
                 (KeyCode::Char('q'), KeyModifiers::CONTROL) => self.state.should_quit = true,
                 (KeyCode::Esc, _) => {
                     self.state.mode = Mode::Default;
+                    self.state.action = Action::None;
                     self.state.current_panel = Panel::None
                 }
                 (KeyCode::Left, KeyModifiers::CONTROL) => {
@@ -81,6 +90,7 @@ impl App {
                 (KeyCode::Up, KeyModifiers::CONTROL) => {
                     self.handle_panel_changes(PanelDirection::Up)
                 }
+                (KeyCode::Enter, _) => self.handle_enter(),
                 _ => {}
             }
         }
@@ -104,6 +114,12 @@ impl App {
                     self.state.current_panel = Panel::Menu
                 }
             }
+        }
+    }
+
+    fn handle_enter(&mut self) {
+        if self.state.current_panel == Panel::Profile {
+            self.state.action = Action::ProfileSelection;
         }
     }
 }

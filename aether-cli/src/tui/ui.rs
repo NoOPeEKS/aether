@@ -1,10 +1,10 @@
 use crate::tui::{
-    app::{App, Panel},
-    widgets::{MenuSection, ProfileSection},
+    app::{Action, App, Panel},
+    widgets::{MenuSection, ProfileSection, ProfileSelectionPopup},
 };
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Style, palette::tailwind},
     widgets::{Block, Paragraph},
 };
@@ -70,4 +70,28 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     let menu_section = MenuSection::new(app.state.current_panel == Panel::Menu);
     frame.render_widget(menu_section, navbar_area[1]);
+
+    if app.state.action == Action::ProfileSelection {
+        let profile_sel_popup = ProfileSelectionPopup::new(&app.state.config);
+        if let Some(line_len) = profile_sel_popup.max_line_len() {
+            let centered_area = center_rect(
+                frame.area(),
+                (line_len as u16).saturating_add(2).max(25),
+                profile_sel_popup.num_profiles().saturating_add(2).max(10),
+            );
+            frame.render_widget(profile_sel_popup, centered_area);
+        }
+    }
+}
+
+fn center_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+
+    Rect {
+        x,
+        y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    }
 }
