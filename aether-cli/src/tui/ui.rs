@@ -73,11 +73,11 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     if app.state.action == Action::ProfileSelection {
         let profile_sel_popup = ProfileSelectionPopup::new(&app.state.config);
-        if let Some(line_len) = profile_sel_popup.max_line_len() {
+        if let Some(token_len) = profile_sel_popup.token_len() {
             let centered_area = center_rect(
                 frame.area(),
-                (line_len as u16).saturating_add(2).max(25),
-                profile_sel_popup.num_profiles().saturating_add(2).max(10),
+                (token_len as u16).saturating_add(2).min(75),
+                10,
             );
             frame.render_widget(profile_sel_popup, centered_area);
         }

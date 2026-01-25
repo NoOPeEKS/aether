@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, BorderType, Clear, Paragraph, Widget},
+    widgets::{Block, BorderType, Clear, Paragraph, Widget, Wrap},
 };
 
 use crate::config::AetherConfig;
@@ -91,44 +91,59 @@ impl<'a> ProfileSelectionPopup<'a> {
     pub fn new(cfg: &'a AetherConfig) -> Self {
         Self { cfg }
     }
-    pub fn max_line_len(&self) -> Option<usize> {
-        if self.cfg.profiles.len() < 1 {
+    pub fn token_len(&self) -> Option<usize> {
+        if self.cfg.profiles.is_empty() {
             return None;
         }
-        self.cfg
-            .profiles
-            .iter()
-            .map(|(name, prof)| {
-                format!("{name}: {}:{}", prof.broker_ip, prof.broker_api_port).len()
-            })
-            .max()
-    }
-    pub fn num_profiles(&self) -> u16 {
-        self.cfg.profiles.len() as u16
+        if let Some(active) = &self.cfg.active
+            && let Some(prof) = self.cfg.profiles.get(&active.clone())
+            && let Some(token) = &prof.token
+        {
+            Some(token.len())
+        } else {
+            None
+        }
     }
 }
 
 impl<'a> Widget for ProfileSelectionPopup<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        Clear.render(area, buf);
         let block = Block::bordered()
             .style(Style::default())
-            .title("Select profile")
+            .title("Profile JWT")
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Style::new().light_green());
+        if let Some(active) = &self.cfg.active {
+            let token = self
+                .cfg
+                .profiles
+                .get(&active.clone())
+                .unwrap()
+                .token
+                .as_ref();
+            if let Some(token) = token {
+                Clear.render(area, buf);
 
-        let lines: Vec<Line<'_>> = self
-            .cfg
-            .profiles
-            .iter()
-            .map(|(name, pinfo)| {
-                Line::from(vec![
-                    name.as_str().yellow(),
-                    Span::from(format!(": {}:{}", pinfo.broker_ip, pinfo.broker_api_port)),
-                ])
-            })
-            .collect();
-        Paragraph::new(lines).block(block).render(area, buf);
+                Paragraph::new(Line::from(vec!["Token: ".yellow(), Span::from(token)]))
+                    .block(block)
+                    .wrap(Wrap { trim: true })
+                    .render(area, buf);
+            } else {
+                Clear.render(area, buf);
+                Paragraph::new(Line::from(vec![
+                    "Cannot get token for active profile".yellow(),
+                ]))
+                .block(block)
+                .render(area, buf);
+            }
+        } else {
+            Clear.render(area, buf);
+            Paragraph::new(Line::from(vec![
+                "Cannot get token without an active user!".light_red(),
+            ]))
+            .block(block)
+            .render(area, buf);
+        }
     }
 }
