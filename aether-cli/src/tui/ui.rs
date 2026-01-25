@@ -19,7 +19,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     let info_area = area[1];
-    let info = Paragraph::new("Info bar will go here")
+    let info = Paragraph::new("<C-q> to exit / <C-left,right,up,down> to change panels / Esc to reset panels")
         .style(Style::default())
         .alignment(Alignment::Center);
     frame.render_widget(info, info_area);
