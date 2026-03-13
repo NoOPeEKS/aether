@@ -1,6 +1,9 @@
 use crate::tui::{
     app::{Action, App, Panel},
-    widgets::{MenuSection, ProfileSection, ProfileSelectionPopup},
+    widgets::{
+        menu::MenuSection,
+        profile::{ProfileSection, ProfileSelectionPopup},
+    },
 };
 use ratatui::{
     Frame,
@@ -19,9 +22,11 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     let info_area = area[1];
-    let info = Paragraph::new("<C-q> to exit / <C-left,right,up,down> to change panels / Esc to reset panels")
-        .style(Style::default())
-        .alignment(Alignment::Center);
+    let info = Paragraph::new(
+        "<C-q> to exit / <C-left,right,up,down> to change panels / Esc to reset panels",
+    )
+    .style(Style::default())
+    .alignment(Alignment::Center);
     frame.render_widget(info, info_area);
 
     let area = Layout::default()
