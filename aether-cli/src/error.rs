@@ -6,9 +6,6 @@ pub enum CliError {
     #[error("RedisStorage could not be created.")]
     RedisStorageCreationError,
 
-    #[error("Super user 'admin' already exists.")]
-    SuperUserAlreadyExists,
-
     #[error("Could not create super user 'admin'.")]
     SuperUserCreationError,
 

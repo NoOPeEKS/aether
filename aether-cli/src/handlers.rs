@@ -39,13 +39,20 @@ pub async fn handle_broker_start(
             .await
             .map_err(|_| CliError::RedisStorageCreationError)?;
 
-        storage
-            .create_user(admin_user)
+        if storage
+            .get_user("admin")
             .await
-            .map_err(|_| CliError::SuperUserAlreadyExists)?;
-        warn!(
-            "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
-        );
+            .map_err(|_| CliError::SuperUserCreationError)?
+            .is_none()
+        {
+            storage
+                .create_user(admin_user)
+                .await
+                .map_err(|_| CliError::SuperUserCreationError)?;
+            warn!(
+                "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+            );
+        }
         let broker = DefaultBroker::new(storage);
         broker
             .run(api_port, jrpc_port)
@@ -53,13 +60,20 @@ pub async fn handle_broker_start(
             .map_err(|_| CliError::RedisBrokerCouldNotRun)?;
     } else {
         let storage = InMemoryStorage::new();
-        storage
-            .create_user(admin_user)
+        if storage
+            .get_user("admin")
             .await
-            .map_err(|_| CliError::SuperUserCreationError)?;
-        warn!(
-            "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
-        );
+            .map_err(|_| CliError::SuperUserCreationError)?
+            .is_none()
+        {
+            storage
+                .create_user(admin_user)
+                .await
+                .map_err(|_| CliError::SuperUserCreationError)?;
+            warn!(
+                "[WARNING] Created default super user 'admin'. Please change its password at `PUT /api/v1/users/admin` !"
+            );
+        }
         let broker = DefaultBroker::new(storage);
         broker
             .run(api_port, jrpc_port)
